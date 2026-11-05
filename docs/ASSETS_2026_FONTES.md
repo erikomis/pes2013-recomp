@@ -75,9 +75,9 @@ baixadas ou convertidas. Nenhuma compra/assinatura foi efetuada.
 
 ## Kitpack recebido e verificado — 05/11/2026
 
-A pendência de download acima foi resolvida pelo usuário e OpenCode. O RAR e
-os arquivos extraídos estão em `sources/kitpackAB2026/`. Auditoria local de
-Codex confirmou 40 pastas de clubes e 80 texturas de p1/p2 referenciadas por
+A pendência de download acima foi resolvida pelo dono do projeto. O RAR e
+os arquivos extraídos estão em `sources/kitpackAB2026/`. Na auditoria local
+foram confirmadas 40 pastas de clubes e 80 texturas de p1/p2 referenciadas por
 KitFile nos config.txt, todas presentes e com assinatura FTEX. Inventário
 reproduzível: `tools/inventory_kit_slots.py`, saída `coverage/kit_slots.json`,
 com hashes e caminhos por slot. A cobertura JSON/CSV/Markdown foi atualizada.

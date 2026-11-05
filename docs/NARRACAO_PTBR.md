@@ -13,7 +13,7 @@ PC, sem comprovar compatibilidade com PES 2013 PS3.
 
 ## Pacote atual medido
 
-Origem somente leitura: `/Users/erik-martins/mnt_pes13/PS3_GAME/USRDIR/dt00_b.img`.
+Origem somente leitura: `$HOME/mnt_pes13/PS3_GAME/USRDIR/dt00_b.img` (a imagem do disco montada pelo `tools/run.sh`).
 
 - AFS de 549.289.984 bytes, 12.140 slots, um vazio.
 - 12.139 entradas identificadas como ADX mono de 24.000 Hz.
