@@ -1,0 +1,31 @@
+# Game data and derived material never goes in a commit (AGENTS.md).
+disc/
+game/*
+!game/*.md
+game_iso
+BLUS31029_DOWNLOAD/
+SAVEDATA/
+*.pkg
+analysis/
+recompiled/
+build/
+cache/
+# Local machine trees
+rpcs3/
+port/spu/
+*.msl
+nohup.out
+cache_lift.log
+.DS_Store
+# Launcher build outputs
+launcher/node_modules
+launcher/dist
+launcher/src-tauri/target
+# Python caches, local notes and third-party text that came with game data
+__pycache__/
+*.pyc
+AGENTS.md
+PES2013_PS3_RECOMP_MASTER_PLAN.md
+Instruções de instalação do Option File e Datapack.txt
+sources/
+gamedata/
