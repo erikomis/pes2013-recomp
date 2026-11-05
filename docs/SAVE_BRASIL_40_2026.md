@@ -74,3 +74,32 @@ nome novo repete outro time, jogadores intactos, EEDIT original do `rpcs3/` inta
 Continua errado nesses 13: **escudo e uniformes** são ainda os dos times genéricos, e
 eles não estão na liga brasileira do Option File. Os outros 27 usam escudo e
 uniformes do próprio Option File. Nada disso foi visto no jogo ainda.
+
+## Séries A e B de 2026 com 20 clubes cada (05/11/2026, noite)
+
+A tabela de ligas do EDIT (210 IDs u16 em 0x516AA6) foi decifrada. A liga 7 (Série B)
+tinha 18 vagas fixas no código do jogo. O port agora substitui as três funções que
+definem o layout (`port/pes_leagues.cpp`): um save com clube na vaga 190 é lido com a
+Série B de 20 vagas a partir da 190 e a liga dos outros europeus com 38 (usava 24);
+qualquer outro save, como o Option File original, é lido exatamente como o jogo lia.
+
+`tools/set_leagues.py` grava as ligas; `leagues_2026.json` no perfil tem as duas listas.
+O EDIT anterior a isso ficou em `DATA.BIN.before-leagues`.
+
+- Série A (20): Athletico, Atlético-MG, Bahia, Botafogo, Chapecoense, Corinthians,
+  Coritiba, Cruzeiro, Flamengo, Fluminense, Grêmio, Internacional, Mirassol, Palmeiras,
+  Bragantino, Remo, Santos, São Paulo, Vasco, Vitória.
+- Série B (20): América-MG, Athletic-MG, Atlético-GO, Avaí, Botafogo-SP, Ceará, CRB,
+  Criciúma, Cuiabá, Fortaleza, Goiás, Novorizontino, Juventude, Londrina, Náutico,
+  Operário-PR, Ponte Preta, São Bernardo, Sport, Vila Nova.
+- Saíram das ligas (continuam no save, sem liga): Portuguesa, ABC, América-RN, Boa
+  Esporte, Figueirense, Guaratinguetá, Joinville, Oeste, Paraná, Paysandu, São Caetano.
+
+Visto no jogo, sem janela: com este perfil o Amistoso mostra "Série B: 20 Times"
+começando no América-MG e "Série A: 20 Times"; com o Option File original, "Série B:
+18 Times" de ABC a Sport, como antes. Ainda não visto: os dois últimos da Série B na
+lista, uma partida, Liga e Master League com 20 na Série B.
+
+Risco conhecido: um trecho do jogo (0x00D37960) insere clubes na liga dos outros
+europeus com limite fixo de 40. Com o layout de 20, inserir mais de 14 clubes nela
+escreveria sobre a Série B. Nada no uso normal faz isso, mas não está provado.

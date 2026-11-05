@@ -1,0 +1,5 @@
+# Lifted functions the port replaces (port/pes_leagues.cpp). tools/weaken_lifted.py
+# marks their lifted definitions weak, so the port's definitions win at link time.
+0x00D4ECA8   # league team count       (league in r4, team table in r3)
+0x00D4ED6C   # league start in the EDIT team table
+0x00D7D200   # league descriptor for the menus and modes (count, team list)

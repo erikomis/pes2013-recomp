@@ -9,7 +9,8 @@
 #                  run.sh mounts it read-only and links PS3_GAME into the VFS
 #   PY             the shared venv (nothing is installed by these scripts;
 #                  if it is missing run ../deadpool-recomp/tools/setup.sh or
-#                  set PY yourself)
+#                  set PY yourself). The launcher's install sets PS3RECOMP_DIR,
+#                  PES_VENV and PES_KEYS to folders in its own data folder.
 export PES_ROOT=${PES_ROOT:-${0:A:h:h}}
 export PS3RECOMP_DIR=${PS3RECOMP_DIR:-$PES_ROOT/../ps3recomp-up-r8}
 export PES_GAME=${PES_GAME:-$PES_ROOT/game}

@@ -7,10 +7,11 @@
 #
 #   decrypt  decrypts game/EBOOT.BIN (the 1.04 update from the PKG: NPDRM SELF,
 #            key_rev 0x0019, free licence, no .rap) into game/EBOOT.elf with
-#            $PS3RECOMP_DIR neighbour Deadpool's decrypt_self.py and the key
-#            file from $PES_KEYS. Skipped when EBOOT.elf is already there.
+#            tools/decrypt_self.py and the key file from $PES_KEYS. Skipped
+#            when EBOOT.elf is already there.
 #   analyse  toolkit tools/ppu_loader.py -> analysis/BLUS31029
-#   lift     toolkit tools/ppu_lifter.py -> recompiled/BLUS31029
+#   lift     toolkit tools/ppu_lifter.py -> recompiled/BLUS31029, then
+#            tools/weaken_lifted.py for the functions the port replaces
 #   spu      tools/lift_spu.sh and tools/lift_jobs.sh -> port/spu
 #   build    configure once if needed, then tools/build.sh (resource guards)
 #
@@ -27,16 +28,19 @@ for s in $steps; do
     case $s in
     decrypt)
         say "decrypt"
-        if [ ! -f "$E" ]; then
+        D=$E
+        if [ ! -f "$D" ]; then
             [ -f "$PES_EBOOT_BIN" ] || {
                 echo "EBOOT.BIN not found: $PES_EBOOT_BIN (stage it from the disc first)" >&2; exit 1; }
             [ -f "$PES_KEYS" ] || {
                 echo "no key file: $PES_KEYS (run ../deadpool-recomp/tools/fetch_keys.py first)" >&2; exit 1; }
-            "$PY" "$PES_ROOT/../deadpool-recomp/tools/decrypt_self.py" "$PES_EBOOT_BIN" \
-                -o "$E" --keys "$PES_KEYS" || exit 1
+            # written beside it first, so a failed run leaves no EBOOT.elf behind
+            "$PY" "$here/decrypt_self.py" "$PES_EBOOT_BIN" \
+                -o "$D.partial" --keys "$PES_KEYS" || { rm -f "$D.partial"; exit 1; }
+            mv "$D.partial" "$D"
         fi
-        [ "$(head -c 4 "$E")" = $'\x7fELF' ] || { echo "$E is not an ELF" >&2; exit 1; }
-        echo "  $E: $(shasum -a 256 "$E" | cut -d' ' -f1)" ;;
+        [ "$(head -c 4 "$D")" = $'\x7fELF' ] || { echo "$D is not an ELF" >&2; exit 1; }
+        echo "  $D: $(shasum -a 256 "$D" | cut -d' ' -f1)" ;;
     analyse)
         say "analyse"
         "$PY" "$PS3RECOMP_DIR/tools/ppu_loader.py" "$E" -o "$PES_ANALYSIS" ;;
@@ -45,7 +49,9 @@ for s in $steps; do
         "$PY" "$PS3RECOMP_DIR/tools/ppu_lifter.py" "$E" "${jobs[@]}" --chunks 12 \
             --functions "$PES_ANALYSIS/EBOOT.functions.json" \
             --hle-stubs "$PES_ANALYSIS/EBOOT.imports.json" \
-            --output "$PES_RECOMP" ;;
+            --output "$PES_RECOMP"
+        # the functions port/pes_leagues.cpp replaces (port/lifted_overrides.txt)
+        "$PY" "$here/weaken_lifted.py" "$PES_RECOMP" ;;
     spu)
         say "spu"
         "$PY" "$PS3RECOMP_DIR/tools/extract_spu_images.py" "$E" -o "$PES_ANALYSIS/spu"
