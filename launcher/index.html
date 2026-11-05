@@ -1,0 +1,958 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PES 2013 recomp</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <!-- icon sprite (original line icons, currentColor) -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="i-mark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2" /><path d="m12 8 3.8 2.8-1.45 4.45h-4.7L8.2 10.8z" /><path d="M12 8V3M15.8 10.8l4.7-1.6M14.35 15.25l2.9 4M9.65 15.25l-2.9 4M8.2 10.8 3.5 9.2" /></symbol>
+      <symbol id="i-home" viewBox="0 0 24 24"><path d="M3.5 11 12 4l8.5 7v8.5a1 1 0 0 1-1 1H15v-6H9v6H4.5a1 1 0 0 1-1-1z" /></symbol>
+      <symbol id="i-graphics" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12.5" rx="1.5" /><path d="M8.5 20.5h7M12 16.5v4" /></symbol>
+      <symbol id="i-perf" viewBox="0 0 24 24"><path d="M3.8 17.5a8.2 8.2 0 1 1 16.4 0" /><path d="m12 17.5 4.2-5.2" /><path d="M6.5 13.5h1M12 7.8v1M17.5 13.5h-1" /></symbol>
+      <symbol id="i-optionfile" viewBox="0 0 24 24"><path d="M12 3.2 19.5 6v5.6c0 4.4-3 7.6-7.5 9.2-4.5-1.6-7.5-4.8-7.5-9.2V6z" /><path d="M9 11.5h6M9 15h6M9.8 8h4.4" /></symbol>
+      <symbol id="i-game" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8" /><circle cx="12" cy="12" r="2.6" /><path d="M12 3.2a8.8 8.8 0 0 1 8.2 5.6" /></symbol>
+      <symbol id="i-controls" viewBox="0 0 24 24"><path d="M7.5 7.5h9a4.5 4.5 0 0 1 4.4 3.6l.8 4.2a2.7 2.7 0 0 1-4.7 2.3L15 15.5H9l-2 2.1a2.7 2.7 0 0 1-4.7-2.3l.8-4.2a4.5 4.5 0 0 1 4.4-3.6z" /><path d="M8 10.2v3.2M6.4 11.8h3.2M15.6 11h.01M17.6 13h.01" /></symbol>
+      <symbol id="i-advanced" viewBox="0 0 24 24"><path d="M4 6.5h9M17 6.5h3M4 12h3M11 12h9M4 17.5h11M19 17.5h1" /><circle cx="15" cy="6.5" r="2" /><circle cx="9" cy="12" r="2" /><circle cx="17" cy="17.5" r="2" /></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z" /></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" /></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 21.5 20h-19z" /><path d="M12 10v4.5M12 17.2v.01" /></symbol>
+    </svg>
+
+    <nav class="sidebar">
+      <div class="brand">
+        <svg class="brand-mark ico"><use href="#i-mark" /></svg>
+        <div>
+          <div class="brand-title">PES 2013</div>
+          <div class="brand-sub">recomp</div>
+        </div>
+      </div>
+      <button class="nav active" data-view="home"><svg class="ico"><use href="#i-home" /></svg><span data-i18n="nav.home">Início</span></button>
+      <button class="nav" data-view="graphics"><svg class="ico"><use href="#i-graphics" /></svg><span data-i18n="nav.graphics">Gráficos</span></button>
+      <button class="nav" data-view="performance"><svg class="ico"><use href="#i-perf" /></svg><span data-i18n="nav.performance">Desempenho</span></button>
+      <button class="nav" data-view="game"><svg class="ico"><use href="#i-game" /></svg><span data-i18n="nav.game">Jogo</span></button>
+      <button class="nav" data-view="optionfile"><svg class="ico"><use href="#i-optionfile" /></svg><span data-i18n="nav.optionfile">Option File</span></button>
+      <button class="nav" data-view="controls"><svg class="ico"><use href="#i-controls" /></svg><span data-i18n="nav.controls">Controles</span></button>
+      <button class="nav" data-view="advanced"><svg class="ico"><use href="#i-advanced" /></svg><span data-i18n="nav.advanced">Avançado</span></button>
+      <div class="spacer"></div>
+      <div class="sidebar-foot">
+        <div id="save-state" class="save-state">
+          <span class="dot"></span><span id="save-state-text" data-i18n="ui.autosave">Salvo automaticamente</span>
+        </div>
+        <p class="hint" data-i18n="ui.autosaveHint"></p>
+        <label class="small" for="ui-lang" data-i18n="app.lang">Idioma do app</label>
+        <select id="ui-lang">
+          <option value="pt-BR">Português (Brasil)</option>
+          <option value="en">English</option>
+        </select>
+        <p id="app-version" class="tiny"></p>
+      </div>
+    </nav>
+
+    <main>
+      <!-- Home ------------------------------------------------------------>
+      <section id="view-home" class="view active">
+        <div class="hero no-art" id="hero">
+          <div class="hero-art" id="hero-art"></div>
+          <div class="hero-shade"></div>
+          <div class="hero-body">
+            <img id="cover" class="cover hidden" alt="" />
+            <div class="hero-text">
+              <p id="game-id" class="game-id"></p>
+              <h1 id="game-title" class="game-title">PES 2013</h1>
+              <p id="game-meta" class="game-meta"></p>
+              <div class="row hero-actions">
+                <button id="play" class="play-btn">
+                  <svg class="ico ico-play"><use href="#i-play" /></svg><svg class="ico ico-stop"><use href="#i-stop" /></svg>
+                  <span id="play-label" data-i18n="home.play">Jogar</span>
+                </button>
+                <button id="hero-capture" class="primary hidden" data-i18n="report.capture">Capturar este quadro</button>
+                <span id="run-state" class="pill warm hidden"><span class="pulse"></span><span id="run-state-text" data-i18n="home.running">Em execução</span></span>
+              </div>
+              <div id="home-unsupported" class="banner hidden">
+                <strong data-i18n="unsupported.title"></strong>
+                <p data-i18n="unsupported.body"></p>
+              </div>
+              <p id="home-msg" class="home-msg"></p>
+            </div>
+          </div>
+        </div>
+
+        <div id="home-blocker" class="notice-bar hidden">
+          <svg class="ico"><use href="#i-alert" /></svg>
+          <div class="grow">
+            <strong id="home-blocker-title"></strong>
+            <div id="home-blocker-text" class="small"></div>
+          </div>
+          <button id="home-blocker-act" class="primary"></button>
+          <button id="home-blocker-act2" class="hidden"></button>
+        </div>
+
+        <div id="home-pack" class="notice-bar hidden">
+          <svg class="ico"><use href="#i-alert" /></svg>
+          <div class="grow small" data-i18n="home.noPack"></div>
+        </div>
+
+        <div id="home-update" class="notice-bar hidden">
+          <svg class="ico"><use href="#i-alert" /></svg>
+          <div class="grow" id="home-update-text"></div>
+          <button id="home-update-go" class="primary" data-i18n="update.title">Atualizações</button>
+        </div>
+
+        <div class="home-grid">
+          <div class="card">
+            <h3 class="card-title" data-i18n="home.quick">Ajustes rápidos</h3>
+            <div class="opt compact" data-feature="PS3_WINDOW_SIZE">
+              <label class="opt-label" for="q-window-size" data-i18n="settings.windowSize">Tamanho da janela</label>
+              <select id="q-window-size" class="size-select"></select>
+            </div>
+            <div class="opt compact" data-feature="PS3_WINDOW_MODE">
+              <label class="opt-label" for="q-window-mode" data-i18n="settings.windowMode">Modo de exibição</label>
+              <select id="q-window-mode">
+                <option value="windowed" data-i18n="settings.windowed">Janela</option>
+                <option value="fullscreen" data-i18n="settings.fullscreenMac">Tela cheia (macOS)</option>
+                <option value="borderless" data-i18n="settings.borderless">Tela cheia sem bordas</option>
+              </select>
+            </div>
+            <label class="opt compact" data-feature="PS3RECOMP_METAL_FPS">
+              <span class="opt-label" data-i18n="settings.showFpsShort">Contador de fps</span>
+              <span class="switch"><input id="q-fps" type="checkbox" /><i></i></span>
+            </label>
+            <label class="opt compact">
+              <span class="opt-label" data-i18n="settings.keepAwakeShort">Manter o Mac acordado</span>
+              <span class="switch"><input id="q-awake" type="checkbox" /><i></i></span>
+            </label>
+            <button class="link more" data-go="graphics"><span data-i18n="home.allGraphics">Todas as opções de gráficos</span> →</button>
+          </div>
+
+          <div class="card">
+            <h3 class="card-title" data-i18n="nav.optionfile">Option File</h3>
+            <div id="profile-info" class="save-info"></div>
+            <div id="save-info" class="save-info muted"></div>
+            <div class="row links">
+              <button class="link" data-go="optionfile" data-i18n="home.manageProfiles">Trocar de perfil</button>
+              <button id="go-saves" class="link" data-i18n="home.manageSaves">Gerenciar saves</button>
+              <button id="open-saves" class="link" data-i18n="home.openSaves">Abrir pasta de saves</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3 class="card-title" data-i18n="home.status">Status</h3>
+            <dl id="status-list" class="status-list"></dl>
+            <div class="row links">
+              <button class="link" data-go="advanced:log" data-i18n="home.viewLog">Ver o log do jogo</button>
+              <button id="open-log" class="link" data-i18n="home.openLog">Abrir log do jogo</button>
+              <button class="link" data-go="advanced:updates" data-i18n="update.title">Atualizações</button>
+              <button id="make-shortcut" class="link hidden" data-i18n="home.shortcut" data-i18n-title="home.shortcutHint">Atalho Jogar na Mesa</button>
+              <button id="steam-add" class="link hidden" data-i18n="steam.add" data-i18n-title="steam.hint">Adicionar à Steam</button>
+              <button id="steam-remove" class="link hidden" data-i18n="steam.remove" data-i18n-title="steam.removeHint">Remover da Steam</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="report-strip">
+          <div class="grow">
+            <strong data-i18n="report.title">Modo de depuração</strong>
+            <span class="muted" data-i18n="home.reportLead"></span>
+          </div>
+          <button class="link" data-go="advanced:diagnostics"><span data-i18n="home.reportGo">Como funciona</span> →</button>
+        </div>
+      </section>
+
+      <!-- Graphics -------------------------------------------------------->
+      <section id="view-graphics" class="view">
+        <header class="page-head">
+          <div>
+            <h1 data-i18n="nav.graphics">Gráficos</h1>
+            <p class="lead" data-i18n="page.graphics"></p>
+          </div>
+          <span class="autosave-chip" data-i18n="ui.appliesNext">Vale no próximo Jogar</span>
+        </header>
+
+        <section class="section">
+          <h2 data-i18n="sec.window">Janela</h2>
+          <div class="opt" data-feature="PS3_WINDOW_MODE">
+            <span class="opt-text"><label class="opt-label" for="window-mode" data-i18n="settings.windowMode">Modo de exibição</label><span class="hint" data-i18n="settings.windowModeHint"></span></span>
+            <select id="window-mode">
+              <option value="windowed" data-i18n="settings.windowed">Janela</option>
+              <option value="fullscreen" data-i18n="settings.fullscreenMac">Tela cheia (macOS)</option>
+              <option value="borderless" data-i18n="settings.borderless">Tela cheia sem bordas</option>
+            </select>
+          </div>
+          <div class="opt" data-feature="PS3_WINDOW_SIZE">
+            <span class="opt-text"><label class="opt-label" for="window-size" data-i18n="settings.windowSize">Tamanho da janela</label><span class="hint" data-i18n="settings.windowSizeHint"></span></span>
+            <select id="window-size" class="size-select"></select>
+          </div>
+          <div class="opt" data-feature="PS3_DISPLAY">
+            <span class="opt-text"><label class="opt-label" for="display" data-i18n="settings.screen">Tela</label><span class="hint" data-i18n="settings.screenHint"></span></span>
+            <select id="display"></select>
+          </div>
+          <label class="opt" data-feature="PS3_VSYNC">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.vsync"></span><span class="hint" data-i18n="settings.vsyncHint"></span></span>
+            <span class="switch"><input id="vsync" type="checkbox" /><i></i></span>
+          </label>
+          <label class="opt">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.gameIcon"></span><span class="hint" data-i18n="settings.gameIconHint"></span></span>
+            <span class="switch"><input id="game-icon" type="checkbox" /><i></i></span>
+          </label>
+          <div id="finder-icon-row" class="row sub-row hidden"><button id="finder-icon"></button><span id="finder-icon-msg" class="small muted"></span></div>
+        </section>
+
+        <section class="section">
+          <h2 data-i18n="sec.image">Qualidade de imagem</h2>
+          <div class="opt">
+            <span class="opt-text"><label class="opt-label" for="preset" data-i18n="settings.preset">Perfil</label><span class="hint" data-i18n="settings.presetHint"></span></span>
+            <select id="preset">
+              <option value="custom" data-i18n="settings.presetCustom">Personalizado</option>
+              <option value="native" data-i18n="settings.presetNative">Original (PS3)</option>
+              <option value="balanced" data-i18n="settings.presetBalanced">Equilibrado</option>
+              <option value="quality" data-i18n="settings.presetQuality">Qualidade</option>
+            </select>
+          </div>
+          <div class="opt" data-feature="PS3_RES_SCALE">
+            <span class="opt-text"><label class="opt-label" for="res-scale"><span data-i18n="settings.resScale">Resolução interna</span> <span class="pill warn" data-i18n="ui.experimental">experimental</span></label><span class="hint" data-i18n="settings.resScaleHint"></span></span>
+            <select id="res-scale">
+              <option value="" data-i18n="settings.resScaleNative">720p (nativa)</option>
+              <option value="1.5">1080p (1,5×)</option>
+              <option value="2">1440p (2×)</option>
+              <option value="3">4K (3×)</option>
+            </select>
+          </div>
+          <div class="opt" data-feature="PS3_ASPECT">
+            <span class="opt-text"><label class="opt-label" for="aspect" data-i18n="settings.aspect">Proporção</label><span class="hint" data-i18n="settings.aspectHint"></span></span>
+            <select id="aspect">
+              <option value="" data-i18n="settings.aspectNative">16:9 (original)</option>
+              <option value="21:9">21:9 (ultrawide)</option>
+              <option value="32:9">32:9 (super ultrawide)</option>
+            </select>
+          </div>
+          <div class="opt" data-feature="PS3_UPSCALE">
+            <span class="opt-text"><label class="opt-label" for="upscale" data-i18n="settings.upscale">Ampliação</label><span class="hint" data-i18n="settings.upscaleHint"></span></span>
+            <select id="upscale">
+              <option value="" data-i18n="settings.upscaleOff">Simples</option>
+              <option value="metalfx">MetalFX</option>
+            </select>
+          </div>
+          <div class="opt" data-feature="PS3_AA">
+            <span class="opt-text"><label class="opt-label" for="aa" data-i18n="settings.aa">Antisserrilhamento</label><span class="hint" data-i18n="settings.aaHint"></span></span>
+            <select id="aa">
+              <option value="" data-i18n="settings.off">Desligado</option>
+              <option value="fxaa">FXAA</option>
+              <option value="smaa" data-feature="smaa">SMAA</option>
+            </select>
+          </div>
+          <div class="opt" data-feature="PS3_SHARPEN">
+            <span class="opt-text"><label class="opt-label" for="sharpen" data-i18n="settings.sharpen">Nitidez</label><span class="hint" data-i18n="settings.sharpenHint"></span></span>
+            <span class="slider"><input id="sharpen" type="range" min="0" max="1" step="0.05" /><output id="sharpen-out"></output></span>
+          </div>
+          <div class="opt" data-feature="PS3_ANISO">
+            <span class="opt-text"><label class="opt-label" for="aniso" data-i18n="settings.aniso">Filtragem anisotrópica</label><span class="hint" data-i18n="settings.anisoHint"></span></span>
+            <select id="aniso">
+              <option value="0" data-i18n="settings.off">Desligado</option>
+              <option value="2">2×</option>
+              <option value="4">4×</option>
+              <option value="8">8×</option>
+              <option value="16" data-i18n="settings.anisoDefault">16× (padrão)</option>
+            </select>
+          </div>
+          <label class="opt" data-feature="PS3_DISPLAY_GAMMA">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.gamma"></span><span class="hint" data-i18n="settings.gammaHint"></span></span>
+            <span class="switch"><input id="gamma-on" type="checkbox" /><i></i></span>
+          </label>
+          <div class="opt sub" data-feature="PS3_DISPLAY_GAMMA">
+            <span class="opt-text"><label class="opt-label" for="gamma" data-i18n="settings.gammaValue">Gama</label></span>
+            <span class="slider"><input id="gamma" type="range" min="0.7" max="1.3" step="0.01" /><output id="gamma-out"></output></span>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2 data-i18n="sec.filters">Filtros</h2>
+          <div class="opt" data-feature="PS3_VIBRANCE">
+            <span class="opt-text"><label class="opt-label" for="vibrance" data-i18n="settings.vibrance">Vibrance</label><span class="hint" data-i18n="settings.vibranceHint"></span></span>
+            <span class="slider"><input id="vibrance" type="range" min="-1" max="1" step="0.05" /><output id="vibrance-out"></output></span>
+          </div>
+          <div class="opt" data-feature="PS3_CONTRAST">
+            <span class="opt-text"><label class="opt-label" for="contrast" data-i18n="settings.contrast">Contraste</label><span class="hint" data-i18n="settings.contrastHint"></span></span>
+            <span class="slider"><input id="contrast" type="range" min="0.5" max="1.5" step="0.05" /><output id="contrast-out"></output></span>
+          </div>
+          <div class="opt" data-feature="PS3_CLARITY">
+            <span class="opt-text"><label class="opt-label" for="clarity" data-i18n="settings.clarity">Clareza</label><span class="hint" data-i18n="settings.clarityHint"></span></span>
+            <span class="slider"><input id="clarity" type="range" min="-1" max="1" step="0.05" /><output id="clarity-out"></output></span>
+          </div>
+          <div class="opt" data-feature="PS3_SHADOWS">
+            <span class="opt-text"><label class="opt-label" for="shadows" data-i18n="settings.shadows">Sombras</label><span class="hint" data-i18n="settings.shadowsHint"></span></span>
+            <span class="slider"><input id="shadows" type="range" min="-1" max="1" step="0.05" /><output id="shadows-out"></output></span>
+          </div>
+          <div class="opt" data-feature="PS3_MIDTONES">
+            <span class="opt-text"><label class="opt-label" for="midtones" data-i18n="settings.midtones">Meios-tons</label><span class="hint" data-i18n="settings.midtonesHint"></span></span>
+            <span class="slider"><input id="midtones" type="range" min="-1" max="1" step="0.05" /><output id="midtones-out"></output></span>
+          </div>
+          <div class="opt" data-feature="PS3_HIGHLIGHTS">
+            <span class="opt-text"><label class="opt-label" for="highlights" data-i18n="settings.highlights">Realces</label><span class="hint" data-i18n="settings.highlightsHint"></span></span>
+            <span class="slider"><input id="highlights" type="range" min="-1" max="1" step="0.05" /><output id="highlights-out"></output></span>
+          </div>
+          <div class="opt" data-feature="PS3_VIGNETTE">
+            <span class="opt-text"><label class="opt-label" for="vignette" data-i18n="settings.vignette">Vinheta</label><span class="hint" data-i18n="settings.vignetteHint"></span></span>
+            <span class="slider"><input id="vignette" type="range" min="0" max="1" step="0.05" /><output id="vignette-out"></output></span>
+          </div>
+          <div class="opt" data-feature="PS3_GRAIN">
+            <span class="opt-text"><label class="opt-label" for="grain" data-i18n="settings.grain">Granulado</label><span class="hint" data-i18n="settings.grainHint"></span></span>
+            <span class="slider"><input id="grain" type="range" min="0" max="1" step="0.05" /><output id="grain-out"></output></span>
+          </div>
+          <div class="opt" data-feature="PS3_LUT">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.lut">LUT de cor</span><span class="hint" data-i18n="settings.lutHint"></span><span id="lut-file" class="small muted"></span></span>
+            <span class="row"><button id="lut-pick" data-i18n="settings.lutPick">Escolher…</button><button id="lut-clear" class="link" data-i18n="settings.lutClear">Tirar</button></span>
+          </div>
+          <div class="opt" data-feature="PS3_LUT_PRESET">
+            <span class="opt-text"><label class="opt-label" for="lut-preset" data-i18n="settings.lutPreset">Predefinição de cor</label><span class="hint" data-i18n="settings.lutPresetHint"></span></span>
+            <select id="lut-preset">
+              <option value="" data-i18n="settings.off">Desligado</option>
+              <option value="warm" data-i18n="settings.lutPresetWarm">Quente</option>
+              <option value="cool" data-i18n="settings.lutPresetCool">Frio</option>
+              <option value="film" data-i18n="settings.lutPresetFilm">Filme</option>
+              <option value="vivid" data-i18n="settings.lutPresetVivid">Vívido</option>
+            </select>
+          </div>
+          <div class="opt sub" data-feature="PS3_LUT_STRENGTH">
+            <span class="opt-text"><label class="opt-label" for="lut-strength" data-i18n="settings.lutStrength">Força do LUT</label></span>
+            <span class="slider"><input id="lut-strength" type="range" min="0" max="1" step="0.05" /><output id="lut-strength-out"></output></span>
+          </div>
+        </section>
+
+        <section class="section" id="mods-section" data-feature="PS3_MODS_DIR">
+          <div class="section-head">
+            <h2 data-i18n="sec.mods">Pacotes de texturas</h2>
+            <span class="row"><button id="mods-refresh" class="link" data-i18n="mods.refresh">Atualizar</button><button id="mods-open" class="link" data-i18n="mods.open">Abrir pasta de mods</button></span>
+          </div>
+          <p class="hint" data-i18n="mods.lead"></p>
+          <ul id="mods-list" class="list mods-list"></ul>
+          <label class="opt" data-feature="PS3_MODS_DUMP">
+            <span class="opt-text"><span class="opt-label" data-i18n="mods.dump"></span><span class="hint" data-i18n="mods.dumpHint"></span></span>
+            <span class="switch"><input id="mods-dump" type="checkbox" /><i></i></span>
+          </label>
+          <div class="row sub-row"><button id="mods-dump-open" class="link" data-i18n="mods.dumpOpen">Abrir pasta do dump</button></div>
+        </section>
+      </section>
+
+      <!-- Performance ----------------------------------------------------->
+      <section id="view-performance" class="view">
+        <header class="page-head">
+          <div>
+            <h1 data-i18n="nav.performance">Desempenho</h1>
+            <p class="lead" data-i18n="page.performance"></p>
+          </div>
+          <span class="autosave-chip" data-i18n="ui.appliesNext">Vale no próximo Jogar</span>
+        </header>
+
+        <section class="section">
+          <h2 data-i18n="sec.pacing">Ritmo de quadros</h2>
+          <div class="opt" data-feature="PS3_FRAMECLOCK_US">
+            <span class="opt-text"><label class="opt-label" for="frame-clock" data-i18n="settings.frameClock">Relógio de quadros</label><span class="hint" data-i18n="settings.frameClockHint"></span></span>
+            <select id="frame-clock">
+              <option value="100">100 µs</option>
+              <option value="250">250 µs</option>
+              <option value="500">500 µs</option>
+              <option value="1000" data-i18n="settings.frameClockDefault">1 ms (padrão)</option>
+              <option value="2000">2 ms</option>
+            </select>
+          </div>
+          <div class="opt" data-feature="PS3_VBLANK_US">
+            <span class="opt-text"><label class="opt-label" for="vblank" data-i18n="settings.vblank">Vblank</label><span class="hint" data-i18n="settings.vblankHint"></span></span>
+            <select id="vblank">
+              <option value="16683" data-i18n="settings.vblankDefault">59,94 Hz (padrão)</option>
+              <option value="16667">60,00 Hz</option>
+              <option value="16000">62,5 Hz</option>
+            </select>
+          </div>
+          <label class="opt" data-feature="PS3_QOS">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.qos"></span><span class="hint" data-i18n="settings.qosHint"></span></span>
+            <span class="switch"><input id="qos" type="checkbox" /><i></i></span>
+          </label>
+          <label class="opt" data-feature="GCM_PUT_DOORBELL">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.doorbell"></span><span class="hint" data-i18n="settings.doorbellHint"></span></span>
+            <span class="switch"><input id="put-doorbell" type="checkbox" /><i></i></span>
+          </label>
+          <label class="opt" data-feature="PS3RECOMP_METAL_FPS">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.showFps"></span><span class="hint" data-i18n="settings.showFpsHint"></span></span>
+            <span class="switch"><input id="show-fps" type="checkbox" /><i></i></span>
+          </label>
+          <label class="opt">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.keepAwake"></span><span class="hint" data-i18n="settings.keepAwakeHint"></span></span>
+            <span class="switch"><input id="keep-awake" type="checkbox" /><i></i></span>
+          </label>
+        </section>
+
+        <section class="section">
+          <h2 data-i18n="sec.render">Renderização</h2>
+          <label class="opt" data-feature="PS3RECOMP_ENG_VCACHE">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.vcache"></span><span class="hint" data-i18n="settings.vcacheHint"></span></span>
+            <span class="switch"><input id="vcache" type="checkbox" /><i></i></span>
+          </label>
+          <label class="opt sub" data-feature="PS3RECOMP_ENG_VCACHE_SPLIT">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.vcacheSplit"></span><span class="hint" data-i18n="settings.vcacheSplitHint"></span></span>
+            <span class="switch"><input id="vcache-split" type="checkbox" /><i></i></span>
+          </label>
+          <label class="opt" data-feature="PS3RECOMP_METAL_BIND_ALL">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.bindChanged"></span><span class="hint" data-i18n="settings.bindChangedHint"></span></span>
+            <span class="switch"><input id="bind-changed" type="checkbox" /><i></i></span>
+          </label>
+        </section>
+
+        <section class="section">
+          <h2 data-i18n="sec.shaders">Shaders</h2>
+          <p class="hint" data-i18n="sc.hint"></p>
+          <div class="row sub-row"><span id="sc-info" class="grow small muted"></span><button id="sc-clear" data-i18n="sc.clear">Limpar</button></div>
+          <label class="opt" data-feature="PS3_SHADER_CACHE">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.shaderCache"></span><span class="hint" data-i18n="settings.shaderCacheHint"></span></span>
+            <span class="switch"><input id="shader-cache" type="checkbox" /><i></i></span>
+          </label>
+          <label class="opt" data-feature="PS3_SHADER_ASYNC">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.shaderAsync"></span><span class="hint" data-i18n="settings.shaderAsyncHint"></span></span>
+            <span class="switch"><input id="shader-async" type="checkbox" /><i></i></span>
+          </label>
+          <div class="opt sub" data-feature="PS3_SHADER_ASYNC_JOBS">
+            <span class="opt-text"><label class="opt-label" for="shader-jobs" data-i18n="settings.shaderJobs">Compilações em paralelo</label><span class="hint" data-i18n="settings.shaderJobsHint"></span></span>
+            <select id="shader-jobs">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="4" data-i18n="settings.shaderJobsDefault">4 (padrão)</option>
+              <option value="6">6</option>
+              <option value="8">8</option>
+            </select>
+          </div>
+          <div class="opt sub" data-feature="PS3_SHADER_ASYNC_SYNC_HIT">
+            <span class="opt-text"><label class="opt-label" for="shader-sync-hit" data-i18n="settings.shaderSyncHit">Shaders já traduzidos</label><span class="hint" data-i18n="settings.shaderSyncHitHint"></span></span>
+            <select id="shader-sync-hit">
+              <option value="1" data-i18n="settings.syncHit1">Na hora, só os da memória (padrão)</option>
+              <option value="2" data-i18n="settings.syncHit2">Na hora, também do cache em disco</option>
+              <option value="0" data-i18n="settings.syncHit0">Sempre em segundo plano</option>
+            </select>
+          </div>
+        </section>
+      </section>
+
+      <!-- Game ------------------------------------------------------------>
+      <section id="view-game" class="view">
+        <header class="page-head">
+          <div>
+            <h1 data-i18n="nav.game">Jogo</h1>
+            <p class="lead" data-i18n="page.game"></p>
+          </div>
+          <span class="autosave-chip" data-i18n="ui.appliesNext">Vale no próximo Jogar</span>
+        </header>
+
+        <section class="section" id="disc-section">
+          <h2 data-i18n="sec.disc">Disco</h2>
+          <p class="hint" data-i18n="disc.lead"></p>
+          <div class="disc-row" style="margin-top: 10px">
+            <code id="disc-path" class="path"></code>
+            <span id="disc-state" class="pill"></span>
+          </div>
+          <p id="disc-image" class="small muted" style="margin-top: 6px"></p>
+          <p id="disc-iso" class="small muted"></p>
+          <div class="row toolbar">
+            <button id="disc-mount-iso" class="primary hidden" data-i18n="disc.mountIso">Montar a imagem do game_iso</button>
+            <button id="disc-mount" data-i18n="disc.mount">Montar outra imagem…</button>
+            <button id="disc-folder" data-i18n="disc.folder">Escolher uma pasta…</button>
+            <button id="disc-auto" class="link" data-i18n="disc.auto">Achar o disco montado</button>
+            <button id="disc-eject" class="link hidden" data-i18n="disc.eject">Ejetar</button>
+          </div>
+          <label class="opt">
+            <span class="opt-text"><span class="opt-label" data-i18n="disc.autoMount"></span><span class="hint" data-i18n="disc.autoMountHint"></span></span>
+            <span class="switch"><input id="auto-mount" type="checkbox" /><i></i></span>
+          </label>
+          <p id="disc-msg" class="small"></p>
+          <div class="disc-row" style="margin-top: 10px">
+            <span class="grow small"><span data-i18n="pack.title">Data pack</span>: <span id="pack-path" class="muted"></span></span>
+            <span id="pack-state" class="pill"></span>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2 data-i18n="sec.language">Idioma</h2>
+          <div class="opt" data-feature="PS3_LANG">
+            <span class="opt-text"><label class="opt-label" for="game-lang" data-i18n="settings.gameLang">Idioma do console</label><span class="hint" data-i18n="settings.gameLangHint"></span></span>
+            <select id="game-lang"></select>
+          </div>
+        </section>
+
+        <section class="section" data-feature="PS3RECOMP_FFMPEG">
+          <h2 data-i18n="sec.video">Vídeos</h2>
+          <label class="opt">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.video"></span><span class="hint" data-i18n="settings.videoHint"></span></span>
+            <span class="switch"><input id="video" type="checkbox" /><i></i></span>
+          </label>
+          <label class="field-label" for="ffmpeg-avcodec">libavcodec</label>
+          <div class="field"><input id="ffmpeg-avcodec" type="text" spellcheck="false" /><div class="buttons"><button id="pick-avcodec" data-i18n="ui.pick">Escolher…</button></div></div>
+          <label class="field-label" for="ffmpeg-avutil">libavutil</label>
+          <div class="field"><input id="ffmpeg-avutil" type="text" spellcheck="false" /><div class="buttons"><button id="pick-avutil" data-i18n="ui.pick">Escolher…</button></div></div>
+          <p class="hint" data-i18n="settings.ffmpegHint"></p>
+        </section>
+
+        <section class="section">
+          <h2 data-i18n="sec.audio">Áudio</h2>
+          <div class="opt" data-feature="PS3_AUDIO_VOLUME">
+            <span class="opt-text"><label class="opt-label" for="audio-volume" data-i18n="settings.audioVolume">Volume</label><span class="hint" data-i18n="settings.audioVolumeHint"></span></span>
+            <span class="slider"><input id="audio-volume" type="range" min="0" max="100" step="5" /><output id="audio-volume-out"></output></span>
+          </div>
+          <label class="opt" data-feature="PS3_AUDIO_MUTE|PS3_MUTE|PS3_NO_AUDIO">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.audioMute"></span><span class="hint" id="audio-mute-hint"></span></span>
+            <span class="switch"><input id="audio-mute" type="checkbox" /><i></i></span>
+          </label>
+          <label class="opt" data-feature="AUDIO_ELASTIC">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.audioElastic"></span><span class="hint" data-i18n="settings.audioElasticHint"></span></span>
+            <span class="switch"><input id="audio-elastic" type="checkbox" /><i></i></span>
+          </label>
+          <div data-feature="PS3_AUDIO_DEVICE">
+            <label class="field-label" for="audio-device" data-i18n="settings.audioDevice">Saída de áudio</label>
+            <div class="field"><input id="audio-device" type="text" spellcheck="false" data-i18n-placeholder="settings.audioDevicePlaceholder" /></div>
+            <p class="hint opt-text" data-i18n="settings.audioDeviceHint"></p>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <h2 data-i18n="sec.trophies">Troféus</h2>
+            <button id="trophy-refresh" class="link" data-i18n="trophies.refresh">Atualizar</button>
+          </div>
+          <p class="hint" data-i18n="trophies.lead"></p>
+          <p id="trophy-summary" class="small muted"></p>
+          <div id="trophy-list" class="trophy-list"></div>
+        </section>
+
+        <section class="section" id="saves-section">
+          <div class="section-head">
+            <h2 data-i18n="saves.title">Saves</h2>
+            <button id="saves-refresh" class="link" data-i18n="saves.refresh">Atualizar</button>
+          </div>
+          <p class="hint" data-i18n="saves.lead"></p>
+          <div id="saves-busy" class="banner hidden">
+            <strong data-i18n="saves.busyTitle"></strong>
+            <p data-i18n="saves.busyBody"></p>
+          </div>
+          <p id="saves-readonly" class="small hint-warn hidden" data-i18n="saves.readOnly"></p>
+          <div class="row toolbar">
+            <button id="saves-backup-all" class="primary" data-i18n="saves.backupAll">Fazer backup de tudo</button>
+            <button id="saves-export-zip" data-i18n="saves.exportZip">Exportar .zip…</button>
+            <button id="saves-import-zip" data-i18n="saves.importZip">Importar .zip…</button>
+          </div>
+          <p id="saves-msg" class="small"></p>
+          <div class="columns saves-cols">
+            <div>
+              <div class="row col-head">
+                <h3 id="saves-port-title" data-i18n="saves.port">Perfil ativo</h3>
+                <button id="saves-open-port" class="link small" data-i18n="saves.openFolder">Abrir pasta</button>
+              </div>
+              <div id="saves-port" class="slots"></div>
+            </div>
+            <div>
+              <div class="row col-head">
+                <h3 data-i18n="saves.rpcs3Title">RPCS3 (só leitura)</h3>
+                <span id="saves-user-wrap" class="row hidden"><span class="small muted" data-i18n="saves.user">Usuário</span><select id="saves-user" class="small-select"></select></span>
+                <button id="saves-open-rpcs3" class="link small" data-i18n="saves.openFolder">Abrir pasta</button>
+              </div>
+              <div id="saves-rpcs3" class="slots"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head">
+            <h2 data-i18n="saves.backups">Backups</h2>
+            <button id="saves-open-backups" class="link" data-i18n="saves.openFolder">Abrir pasta</button>
+          </div>
+          <div class="opt">
+            <span class="opt-text"><label class="opt-label" for="saves-keep" data-i18n="saves.keep">Backups automáticos antes de Jogar a manter</label><span class="hint" data-i18n="saves.keepHint"></span></span>
+            <input id="saves-keep" type="number" min="0" max="100" step="1" class="num" />
+          </div>
+          <ul id="saves-backups" class="list backups"></ul>
+        </section>
+      </section>
+
+      <!-- Option File ----------------------------------------------------->
+      <section id="view-optionfile" class="view">
+        <header class="page-head">
+          <div>
+            <h1 data-i18n="nav.optionfile">Option File</h1>
+            <p class="lead" data-i18n="page.optionfile"></p>
+          </div>
+          <span class="autosave-chip" data-i18n="ui.appliesNext">Vale no próximo Jogar</span>
+        </header>
+
+        <div id="pf-busy" class="banner hidden">
+          <strong data-i18n="saves.busyTitle"></strong>
+          <p data-i18n="pf.busyBody"></p>
+        </div>
+
+        <section class="section">
+          <div class="section-head">
+            <h2 data-i18n="pf.list">Perfis</h2>
+            <button id="pf-refresh" class="link" data-i18n="pf.refresh">Atualizar</button>
+          </div>
+          <div id="pf-list" class="pf-list"></div>
+          <p id="pf-msg" class="small"></p>
+        </section>
+
+        <section class="section">
+          <h2 data-i18n="pf.new">Novo perfil</h2>
+          <p class="hint" data-i18n="pf.newLead"></p>
+          <div class="opt">
+            <span class="opt-text"><label class="opt-label" for="pf-name" data-i18n="pf.name">Nome</label></span>
+            <input id="pf-name" type="text" spellcheck="false" maxlength="64" />
+          </div>
+          <div class="opt">
+            <span class="opt-text"><label class="opt-label" for="pf-kind" data-i18n="pf.kind">Começar de</label><span id="pf-kind-hint" class="hint"></span></span>
+            <select id="pf-kind">
+              <option value="empty" data-i18n="pf.kindEmpty">Vazio</option>
+              <option value="copy" data-i18n="pf.kindCopy">Cópia de outro perfil</option>
+              <option value="folder" data-i18n="pf.kindFolder">Pasta de saves do PS3</option>
+              <option value="zip" data-i18n="pf.kindZip">Arquivo .zip de saves</option>
+            </select>
+          </div>
+          <div id="pf-from-row" class="opt sub hidden">
+            <span class="opt-text"><label class="opt-label" for="pf-from" data-i18n="pf.from">Perfil de origem</label></span>
+            <select id="pf-from"></select>
+          </div>
+          <div id="pf-path-row" class="hidden">
+            <label class="field-label" for="pf-path" data-i18n="pf.source">Origem</label>
+            <div class="field"><input id="pf-path" type="text" spellcheck="false" /><div class="buttons"><button id="pf-path-pick" data-i18n="ui.pick">Escolher…</button></div></div>
+          </div>
+          <div class="row actions">
+            <button id="pf-create" class="primary" data-i18n="pf.create">Criar perfil</button>
+            <button id="pf-cancel" class="danger hidden" data-i18n="install.cancel">Cancelar</button>
+          </div>
+          <p id="pf-create-msg" class="small"></p>
+          <pre id="pf-log" class="log short hidden"></pre>
+        </section>
+
+        <section class="section">
+          <h2 data-i18n="pf.register">Registrar uma pasta existente</h2>
+          <p class="hint" data-i18n="pf.registerLead"></p>
+          <div class="opt">
+            <span class="opt-text"><label class="opt-label" for="pf-ext-name" data-i18n="pf.name">Nome</label></span>
+            <input id="pf-ext-name" type="text" spellcheck="false" maxlength="64" />
+          </div>
+          <label class="field-label" for="pf-ext-path" data-i18n="pf.folder">Pasta</label>
+          <div class="field"><input id="pf-ext-path" type="text" spellcheck="false" /><div class="buttons"><button id="pf-ext-pick" data-i18n="ui.pick">Escolher…</button></div></div>
+          <div class="row actions"><button id="pf-ext-add" data-i18n="pf.registerBtn">Registrar</button></div>
+          <p id="pf-ext-msg" class="small"></p>
+        </section>
+      </section>
+
+      <!-- Controls -------------------------------------------------------->
+      <section id="view-controls" class="view">
+        <header class="page-head">
+          <div>
+            <h1 data-i18n="controls.title">Controles</h1>
+            <p class="lead" data-i18n="controls.lead"></p>
+          </div>
+          <span class="autosave-chip" data-i18n="ui.appliesNext">Vale no próximo Jogar</span>
+        </header>
+
+        <section class="section" id="controls-test" data-feature="PS3_INPUT_MAP">
+          <div class="section-head">
+            <h2 data-i18n="controls.bindings">Botões</h2>
+            <button id="controls-reset" class="link" data-i18n="controls.reset">Restaurar padrões</button>
+          </div>
+          <p class="hint" data-i18n="controls.testHint"></p>
+          <table class="bindings">
+            <thead>
+              <tr>
+                <th>PS3</th>
+                <th data-i18n="controls.keyboard">Teclado</th>
+                <th data-i18n="controls.mouseCol">Mouse</th>
+                <th data-i18n="controls.controller">Controle</th>
+              </tr>
+            </thead>
+            <tbody id="controls-body"></tbody>
+          </table>
+          <p id="controls-msg" class="small accent-text"></p>
+          <p class="hint" data-i18n="controls.notes"></p>
+          <div class="row path-row">
+            <code id="controls-path" class="path"></code>
+            <span id="controls-default" class="small muted" data-i18n="controls.noFile">sem arquivo: o layout padrão do jogo</span>
+            <button id="controls-open" class="link" data-i18n="controls.open">Mostrar o arquivo</button>
+          </div>
+        </section>
+
+        <section class="section">
+          <h2 data-i18n="controls.test">Testar o controle</h2>
+          <p class="hint" data-i18n="controls.padTestHint"></p>
+          <p id="pad-name" class="pad-name small"></p>
+          <div class="pad-axes">
+            <div class="stick-wrap"><div class="stick" id="stick-l"><i></i></div><span data-i18n="controls.leftStick">Analógico esquerdo</span></div>
+            <div class="stick-wrap"><div class="stick" id="stick-r"><i></i></div><span data-i18n="controls.rightStick">Analógico direito</span></div>
+          </div>
+        </section>
+
+        <section class="section" data-feature="PS3_INPUT_MODE">
+          <h2 data-i18n="sec.input">Entrada</h2>
+          <div class="opt">
+            <span class="opt-text"><label class="opt-label" for="input-mode" data-i18n="settings.inputMode">O que controla o jogo</label><span class="hint" data-i18n="settings.inputModeHint"></span></span>
+            <select id="input-mode">
+              <option value="both" data-i18n="settings.inputBoth">Teclado, mouse e controle</option>
+              <option value="controller" data-i18n="settings.inputController">Só o controle</option>
+              <option value="keyboard" data-i18n="settings.inputKeyboard">Só teclado e mouse</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="section" data-feature="PS3_MOUSE">
+          <h2 data-i18n="settings.mouse">Mouse</h2>
+          <label class="opt">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.mouseOn"></span><span class="hint" data-i18n="settings.mouseOnHint"></span></span>
+            <span class="switch"><input id="mouse-on" type="checkbox" /><i></i></span>
+          </label>
+          <div class="opt sub">
+            <span class="opt-text"><label class="opt-label" for="mouse-sens" data-i18n="settings.mouseSens">Sensibilidade</label></span>
+            <span class="slider"><input id="mouse-sens" type="range" min="0.25" max="4" step="0.05" /><output id="mouse-sens-out"></output></span>
+          </div>
+          <label class="opt sub">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.mouseInvert"></span></span>
+            <span class="switch"><input id="mouse-invert" type="checkbox" /><i></i></span>
+          </label>
+          <label class="opt sub">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.mouseInvertX"></span></span>
+            <span class="switch"><input id="mouse-invert-x" type="checkbox" /><i></i></span>
+          </label>
+          <div class="opt sub">
+            <span class="opt-text"><label class="opt-label" for="mouse-dz" data-i18n="settings.mouseDeadzone">Zona morta</label><span class="hint" data-i18n="settings.mouseDeadzoneHint"></span></span>
+            <span class="slider"><input id="mouse-dz" type="range" min="0" max="120" step="1" /><output id="mouse-dz-out"></output></span>
+          </div>
+          <label class="opt sub">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.mouseCapture"></span><span class="hint" data-i18n="settings.mouseCaptureHint"></span></span>
+            <span class="switch"><input id="mouse-capture" type="checkbox" /><i></i></span>
+          </label>
+        </section>
+
+        <section class="section" data-feature="PS3_RUMBLE">
+          <h2 data-i18n="settings.rumbleTitle">Vibração</h2>
+          <label class="opt">
+            <span class="opt-text"><span class="opt-label" data-i18n="settings.rumble"></span><span class="hint" data-i18n="settings.rumbleHint"></span></span>
+            <span class="switch"><input id="rumble-on" type="checkbox" /><i></i></span>
+          </label>
+          <div class="opt sub">
+            <span class="opt-text"><label class="opt-label" for="rumble-strength" data-i18n="settings.rumbleStrength">Intensidade</label></span>
+            <span class="slider"><input id="rumble-strength" type="range" min="0" max="200" step="10" /><output id="rumble-strength-out"></output></span>
+          </div>
+          <div class="row sub-row"><button id="rumble-test" data-i18n="settings.rumbleTest">Testar</button><span id="rumble-test-msg" class="small muted"></span></div>
+        </section>
+
+        <section class="section">
+          <h2 data-i18n="controls.notesTitle">No Mac</h2>
+          <p class="hint" data-i18n="controls.pairing"></p>
+        </section>
+      </section>
+
+      <!-- Advanced -------------------------------------------------------->
+      <section id="view-advanced" class="view">
+        <header class="page-head">
+          <div>
+            <h1 data-i18n="nav.advanced">Avançado</h1>
+            <p class="lead" data-i18n="page.advanced"></p>
+          </div>
+        </header>
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="install" role="tab" data-i18n="tab.install">Instalar / recompilar</button>
+          <button class="tab" data-tab="updates" role="tab" data-i18n="update.title">Atualizações</button>
+          <button class="tab" data-tab="log" role="tab" data-i18n="tab.log">Log do jogo</button>
+          <button class="tab" data-tab="diagnostics" role="tab" data-i18n="report.title">Modo de depuração</button>
+          <button class="tab" data-tab="env" role="tab" data-i18n="tab.env">Ambiente</button>
+        </div>
+
+        <!-- Install / rebuild -->
+        <div id="tab-install" class="tab-panel active">
+          <p class="hint" data-i18n="install.lead"></p>
+          <div id="install-unsupported" class="banner hidden">
+            <strong data-i18n="unsupported.title"></strong>
+            <p data-i18n="unsupported.body"></p>
+          </div>
+
+          <div id="card-prereqs" class="card step">
+            <div class="row step-head">
+              <span class="step-no">1</span>
+              <h2 data-i18n="prereq.title">Requisitos deste computador</h2>
+              <span id="prereq-summary" class="pill"></span>
+            </div>
+            <p class="hint" data-i18n="prereq.lead"></p>
+            <ul id="prereqs" class="prereqs"></ul>
+            <div class="row actions">
+              <button id="prereq-fix" class="primary hidden" data-i18n="prereq.installClt">Instalar as Command Line Tools</button>
+              <button id="prereq-recheck" data-i18n="prereq.recheck">Verificar de novo</button>
+            </div>
+            <p id="prereq-msg" class="small"></p>
+          </div>
+
+          <div id="card-port" class="card step">
+            <div class="row step-head">
+              <span class="step-no">2</span>
+              <h2 data-i18n="port.title">A pasta do port</h2>
+              <span id="port-summary" class="pill"></span>
+            </div>
+            <p class="hint" data-i18n="port.lead"></p>
+            <div class="field" style="margin-top: 10px">
+              <input id="port-dir" type="text" spellcheck="false" data-i18n-placeholder="port.auto" />
+              <div class="buttons"><button id="pick-port-dir" data-i18n="ui.pick">Escolher…</button><button id="find-port-dirs" data-i18n="port.find">Procurar</button></div>
+            </div>
+            <div id="port-builds" class="summary hidden"></div>
+            <ul id="port-list" class="port-list"></ul>
+          </div>
+
+          <div id="card-run" class="card step">
+            <div class="row step-head">
+              <span class="step-no">3</span>
+              <h2 data-i18n="run.title">Recompilar</h2>
+            </div>
+            <p class="hint" data-i18n="run.lead"></p>
+            <div class="steps-pick" id="steps-pick"></div>
+            <div class="opt">
+              <span class="opt-text"><label class="opt-label" for="jobs" data-i18n="run.jobs">Tarefas em paralelo</label><span class="hint" data-i18n="run.jobsHint"></span></span>
+              <input id="jobs" type="number" min="0" max="64" step="1" class="num" />
+            </div>
+            <div class="row actions">
+              <button id="start" class="primary big" data-i18n="run.start">Recompilar</button>
+              <button id="cancel" class="danger hidden" data-i18n="install.cancel">Cancelar</button>
+              <button id="copy-log" class="link" data-i18n="install.copyLog">Copiar log</button>
+            </div>
+            <div class="progress-wrap">
+              <div class="progress"><div id="bar"></div></div>
+              <div id="progress-text" class="small muted"></div>
+              <div id="install-msg"></div>
+            </div>
+            <h3 data-i18n="install.steps">Etapas</h3>
+            <ol id="steps" class="list"></ol>
+            <h3 data-i18n="install.log">Log</h3>
+            <pre id="log" class="log"></pre>
+          </div>
+        </div>
+
+        <!-- Updates -->
+        <div id="tab-updates" class="tab-panel">
+          <div class="card">
+            <h3 class="card-title" data-i18n="update.sources">Fontes do port</h3>
+            <div id="src-info" class="update-info"></div>
+            <div class="row">
+              <button id="src-pull" class="primary hidden" data-i18n="update.pull">Baixar as fontes novas</button>
+              <button id="src-rebuild" class="primary hidden" data-i18n="update.rebuild">Recompilar o jogo</button>
+              <button id="update-check" data-i18n="update.check">Procurar de novo</button>
+            </div>
+          </div>
+          <div class="card" style="margin-top: 16px">
+            <h3 class="card-title" data-i18n="update.app">Este app</h3>
+            <div id="app-info" class="update-info"></div>
+            <div class="row"><button id="app-open" class="primary hidden" data-i18n="update.open">Ver a versão nova</button></div>
+            <label id="update-auto-row" class="opt" style="margin-top: 10px">
+              <span class="opt-text"><span class="opt-label" data-i18n="update.auto">Procurar atualizações ao abrir</span><span class="hint" data-i18n="update.autoHint"></span></span>
+              <span class="switch"><input id="update-auto" type="checkbox" /><i></i></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Game log -->
+        <div id="tab-log" class="tab-panel">
+          <p class="hint" data-i18n="log.lead"></p>
+          <div class="row toolbar">
+            <button id="glog-refresh" data-i18n="log.refresh">Atualizar</button>
+            <label class="check inline"><span class="switch"><input id="glog-follow" type="checkbox" checked /><i></i></span><span data-i18n="log.follow">Acompanhar</span></label>
+            <input id="glog-filter" type="search" class="grow" spellcheck="false" data-i18n-placeholder="log.filter" />
+            <label class="check inline"><input id="glog-errors" type="checkbox" /> <span data-i18n="log.errorsOnly">Só avisos e erros</span></label>
+          </div>
+          <div class="row log-meta">
+            <code id="glog-path" class="path grow"></code>
+            <button id="glog-copy" class="link" data-i18n="log.copy">Copiar</button>
+            <button id="glog-open" class="link" data-i18n="log.open">Mostrar no Finder</button>
+            <button id="glog-sessions" class="link" data-i18n="log.sessions">Sessões anteriores</button>
+          </div>
+          <pre id="glog" class="log tall"></pre>
+          <p id="glog-state" class="small muted"></p>
+        </div>
+
+        <!-- Debug mode -->
+        <div id="tab-diagnostics" class="tab-panel">
+          <div class="card" id="report-card">
+            <h3 class="card-title" data-i18n="report.title">Modo de depuração</h3>
+            <p class="hint" id="report-hint"></p>
+            <div class="row">
+              <button id="report-play" class="primary" data-i18n="report.play">Jogar em modo de depuração</button>
+              <button id="report-capture" class="primary hidden" data-i18n="report.capture">Capturar este quadro</button>
+            </div>
+            <p id="report-state" class="small muted"></p>
+            <p id="report-msg" class="small"></p>
+          </div>
+          <section class="section">
+            <div class="section-head">
+              <h2 data-i18n="report.sessions">Sessões de depuração</h2>
+              <button id="report-refresh" class="link" data-i18n="report.refresh">Atualizar</button>
+            </div>
+            <p class="hint" data-i18n="report.sessionsLead"></p>
+            <label class="field-label" for="report-notes" data-i18n="report.notes">O que deu errado (opcional)</label>
+            <textarea id="report-notes" rows="2"></textarea>
+            <ul id="report-sessions" class="sessions"></ul>
+            <p id="report-none" class="small muted hidden" data-i18n="report.noSessions"></p>
+            <p class="hint" data-i18n="report.privacy"></p>
+          </section>
+        </div>
+
+        <!-- Environment -->
+        <div id="tab-env" class="tab-panel">
+          <section class="section">
+            <h2 data-i18n="settings.extraEnv">Variáveis extras</h2>
+            <textarea id="extra-env" rows="5" spellcheck="false"></textarea>
+            <p class="hint" data-i18n="settings.extraEnvHint"></p>
+          </section>
+          <section class="section">
+            <h2 data-i18n="sec.log">O log do jogo</h2>
+            <p class="hint" data-i18n="logopt.lead"></p>
+            <label class="opt" data-feature="PS3_PAD_LOG">
+              <span class="opt-text"><span class="opt-label" data-i18n="logopt.padLog"></span><span class="hint" data-i18n="logopt.padLogHint"></span></span>
+              <span class="switch"><input id="pad-log" type="checkbox" /><i></i></span>
+            </label>
+            <div class="opt" data-feature="RSX_PACE_LOG">
+              <span class="opt-text"><label class="opt-label" for="pace-log" data-i18n="logopt.pace">Ritmo de quadros no log</label><span class="hint" data-i18n="logopt.paceHint"></span></span>
+              <select id="pace-log">
+                <option value="0" data-i18n="settings.off">Desligado</option>
+                <option value="5">5 s</option>
+                <option value="10">10 s</option>
+                <option value="30">30 s</option>
+              </select>
+            </div>
+            <label class="opt" data-feature="PS3_TELEMETRY">
+              <span class="opt-text"><span class="opt-label" data-i18n="logopt.telemetry"></span><span class="hint" data-i18n="logopt.telemetryHint"></span></span>
+              <span class="switch"><input id="telemetry" type="checkbox" /><i></i></span>
+            </label>
+            <div class="opt" data-feature="RSX_DRAIN_SPIKE_MS">
+              <span class="opt-text"><label class="opt-label" for="drain-spike" data-i18n="logopt.spike">Passadas lentas da FIFO</label><span class="hint" data-i18n="logopt.spikeHint"></span></span>
+              <select id="drain-spike">
+                <option value="0" data-i18n="settings.off">Desligado</option>
+                <option value="60">60 ms</option>
+                <option value="100">100 ms</option>
+                <option value="200">200 ms</option>
+              </select>
+            </div>
+            <label class="opt" data-feature="PS3RECOMP_ENG_VCACHE_STATS">
+              <span class="opt-text"><span class="opt-label" data-i18n="logopt.vcacheStats"></span><span class="hint" data-i18n="logopt.vcacheStatsHint"></span></span>
+              <span class="switch"><input id="vcache-stats" type="checkbox" /><i></i></span>
+            </label>
+            <label class="opt" data-feature="PS3_VERBOSE">
+              <span class="opt-text"><span class="opt-label" data-i18n="settings.verboseLog"></span><span class="hint" data-i18n="settings.verboseLogHint"></span></span>
+              <span class="switch"><input id="verbose-log" type="checkbox" /><i></i></span>
+            </label>
+          </section>
+          <section class="section">
+            <h2 data-i18n="settings.preview">Comando equivalente</h2>
+            <code id="preview" class="preview"></code>
+          </section>
+          <section class="section">
+            <h2 data-i18n="settings.resetTitle">Restaurar</h2>
+            <p class="hint" data-i18n="settings.resetHint"></p>
+            <div class="row"><button id="reset" class="danger-outline" data-i18n="settings.reset">Restaurar padrões</button></div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
