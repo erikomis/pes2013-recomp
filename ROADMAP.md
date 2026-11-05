@@ -63,10 +63,12 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 
 - [ ] Internal resolution 1080p / 1440p / 4K (`PS3_RES_SCALE`), being ported
   from the inFAMOUS 2 toolkit. Each step needs its own 60 fps measurement.
-- [ ] Window modes: windowed, borderless, fullscreen, window size, screen, vsync.
-- [ ] Picture filters: vibrance, contrast, vignette, grain, colour LUT.
-- [ ] MetalFX upscaling; ultrawide aspect (wider view, HUD kept 16:9).
-- [ ] HD texture packs (`PS3_MODS`), with a texture dump to start them from.
+- [x] Window modes, window size, screen, vsync (2026-11-05, in the build; not yet seen in a window).
+- [x] Picture filters: vibrance, contrast, vignette, grain, colour LUT and presets (unit-tested).
+- [x] MetalFX spatial upscaling (unit-tested; not yet seen in a window).
+- [x] Texture packs (`PS3_MODS`) and the texture dump (a test pack replaced title-screen textures headless).
+- [ ] HD packs for this game: none made yet.
+- [ ] Ultrawide aspect (wider view, HUD kept 16:9): needs a projection patch for this game.
 - [x] Anisotropic filtering 16x by default, FXAA, sharpening.
 
 ### Performance

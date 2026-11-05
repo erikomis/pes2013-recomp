@@ -63,11 +63,12 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 
 - [ ] Resolução interna 1080p / 1440p / 4K (`PS3_RES_SCALE`), sendo trazida do
   toolkit do inFAMOUS 2. Cada degrau precisa da própria medição de 60 fps.
-- [ ] Modos de janela: janela, sem borda, tela cheia, tamanho, monitor, vsync.
-- [ ] Filtros de imagem: vibração, contraste, vinheta, granulação, LUT de cor.
-- [ ] Upscaling MetalFX; ultrawide (visão mais larga, HUD em 16:9 no centro).
-- [ ] Pacotes de texturas HD (`PS3_MODS`), com exportação das texturas do jogo
-  para começar.
+- [x] Modos de janela, tamanho, monitor, vsync (2026-11-05, na build; ainda não vistos em janela).
+- [x] Filtros de imagem: vibração, contraste, vinheta, granulação, LUT de cor e presets (com testes).
+- [x] Upscaling espacial MetalFX (com teste; ainda não visto em janela).
+- [x] Pacotes de texturas (`PS3_MODS`) e exportação das texturas (um pacote de teste trocou texturas da tela de título sem janela).
+- [ ] Pacotes HD para este jogo: nenhum feito ainda.
+- [ ] Ultrawide (visão mais larga, HUD em 16:9 no centro): precisa de um patch de projeção para este jogo.
 - [x] Filtro anisotrópico 16x por padrão, FXAA, nitidez.
 
 ### Desempenho

@@ -48,7 +48,9 @@ toolkit fixes made for the inFAMOUS, Resistance and Deadpool ports. See
 | Gameplay at 60 fps | ✅ 60.0 fps, p95 17.6 ms, ~133% CPU (headless, quiet machine, 2026-11-05) |
 | Replays | ✅ 30 fps, which looks like the game's own pacing (the render thread is half idle) |
 | Sound (48 kHz, game mixer) | ✅; 🧪 one frame of 0.1-0.2 s at the start of a replay still drops a few audio blocks |
-| Internal resolution 1080p / 1440p / 4K, window modes, image filters, texture packs | ⏳ being ported from the inFAMOUS 2 and Resistance 2 toolkits |
+| Window modes (windowed, borderless, fullscreen), window size, screen, vsync, MetalFX | 🧪 in the build since 2026-11-05, not yet seen in a window |
+| Image filters (vibrance, contrast, vignette, grain, colour LUT) and texture packs | 🧪 in the build since 2026-11-05: unit tests and headless runs (a test pack replaced title-screen textures) |
+| Internal resolution 1080p / 1440p / 4K, ultrawide | ⏳ not ported yet: it resizes every render target |
 | The app (launcher): play, graphics, controls, Option File profiles, saves | 🧪 built; not yet tested launching the game |
 | Brazil 2026 rosters and kits | 🧪 tools and data collected; a Flamengo test save loads in the line-up screen |
 | Master League, Become a Legend, saving a career | ❓ not tested |
@@ -99,6 +101,10 @@ tools/run.sh > cache/boot-meu.log 2>&1
 | `PS3_AA=fxaa`, `PS3_SHARPEN=0..1`, `PS3_DISPLAY_GAMMA` | Anti-aliasing, sharpening, gamma at present |
 | `AUDIO_ELASTIC=1` | A 43 ms audio queue that waits for a late block (default; `0` = 21 ms) |
 | `PS3_AUDIO_VOLUME=0..100`, `PS3_AUDIO_MUTE=1`, `PS3_AUDIO_DEVICE=<name part>` | Host audio level, mute, output device |
+| `PS3_WINDOW_MODE=windowed\|borderless\|fullscreen`, `PS3_WINDOW_SIZE=WxH`, `PS3_DISPLAY=<n or name>`, `PS3_VSYNC=0` | The window (Cmd+F toggles fullscreen) |
+| `PS3_UPSCALE=metalfx` | MetalFX spatial upscaling to the window's pixel size |
+| `PS3_VIBRANCE`, `PS3_CONTRAST`, `PS3_VIGNETTE`, `PS3_GRAIN`, `PS3_LUT=<png>`, `PS3_LUT_STRENGTH`, `PS3_LUT_PRESET=warm\|cool\|film\|vivid` | Picture filters (all off by default) |
+| `PS3_MODS_DIR=<dir>`, `PS3_MODS=<pack,pack>`, `PS3_MODS_DUMP=<dir>` | Texture packs (`<16-hex key>.png`, first pack wins) and a texture dump to start one |
 | `PS3RECOMP_METAL_FPS=1` | Frame-rate counter |
 | `RSX_PACE_LOG=5`, `AUDIO_RATE=1` | Every 5 s: fps, frame-time percentiles, audio gaps (what to send with a report) |
 | `PS3_VERBOSE=1` | The full runtime log (very large) |

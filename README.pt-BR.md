@@ -48,7 +48,9 @@ correções do toolkit feitas para os portes de inFAMOUS, Resistance e Deadpool.
 | Partida a 60 fps | ✅ 60,0 fps, p95 17,6 ms, ~133% de CPU (sem janela, máquina livre, 2026-11-05) |
 | Replays | ✅ 30 fps, que parece ser o ritmo do próprio jogo (a thread de vídeo fica metade do tempo parada) |
 | Som (48 kHz, mixer do jogo) | ✅; 🧪 um quadro de 0,1-0,2 s no início do replay ainda perde alguns blocos de áudio |
-| Resolução interna 1080p / 1440p / 4K, modos de janela, filtros de imagem, pacotes de texturas | ⏳ sendo trazidos dos toolkits do inFAMOUS 2 e do Resistance 2 |
+| Modos de janela (janela, sem borda, tela cheia), tamanho, monitor, vsync, MetalFX | 🧪 na build desde 2026-11-05, ainda não vistos em janela |
+| Filtros de imagem (vibração, contraste, vinheta, granulação, LUT de cor) e pacotes de texturas | 🧪 na build desde 2026-11-05: testes de unidade e execuções sem janela (um pacote de teste trocou texturas da tela de título) |
+| Resolução interna 1080p / 1440p / 4K, ultrawide | ⏳ ainda não trazida: mexe no tamanho de todos os alvos de desenho |
 | O app (launcher): jogar, gráficos, controles, perfis de Option File, saves | 🧪 compilado; ainda não testado abrindo o jogo |
 | Elencos e uniformes Brasil 2026 | 🧪 ferramentas e dados coletados; um save de teste do Flamengo carrega na tela de escalação |
 | Master League, Rumo ao Estrelato, salvar uma carreira | ❓ não testado |
@@ -100,6 +102,10 @@ jogo em `rpcs3/` e abre o jogo. Passe ajustes como `VAR=valor` depois dele.
 | `PS3_AA=fxaa`, `PS3_SHARPEN=0..1`, `PS3_DISPLAY_GAMMA` | Antisserrilhado, nitidez, gama na apresentação |
 | `AUDIO_ELASTIC=1` | Fila de áudio de 43 ms que espera um bloco atrasado (padrão; `0` = 21 ms) |
 | `PS3_AUDIO_VOLUME=0..100`, `PS3_AUDIO_MUTE=1`, `PS3_AUDIO_DEVICE=<parte do nome>` | Volume, mudo e saída de som do Mac |
+| `PS3_WINDOW_MODE=windowed\|borderless\|fullscreen`, `PS3_WINDOW_SIZE=LxA`, `PS3_DISPLAY=<n ou nome>`, `PS3_VSYNC=0` | A janela (Cmd+F alterna a tela cheia) |
+| `PS3_UPSCALE=metalfx` | Upscaling espacial MetalFX até o tamanho em pixels da janela |
+| `PS3_VIBRANCE`, `PS3_CONTRAST`, `PS3_VIGNETTE`, `PS3_GRAIN`, `PS3_LUT=<png>`, `PS3_LUT_STRENGTH`, `PS3_LUT_PRESET=warm\|cool\|film\|vivid` | Filtros de imagem (todos desligados por padrão) |
+| `PS3_MODS_DIR=<pasta>`, `PS3_MODS=<pacote,pacote>`, `PS3_MODS_DUMP=<pasta>` | Pacotes de texturas (`<chave de 16 hex>.png`, o primeiro pacote vence) e a exportação das texturas para começar um |
 | `PS3RECOMP_METAL_FPS=1` | Contador de fps |
 | `RSX_PACE_LOG=5`, `AUDIO_RATE=1` | A cada 5 s: fps, tempos de quadro e buracos no áudio (o que mandar junto com um relato) |
 | `PS3_VERBOSE=1` | O log completo do runtime (muito grande) |
