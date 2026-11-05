@@ -2474,16 +2474,32 @@ fn reveal(path: String) -> Result<(), String> {
     reveal_unix(PathBuf::from(&path))
 }
 
+/// What `open` gets for a reveal: `None` to open the folder itself, `Some("-R")`
+/// to select the item in its folder. A path that does not exist is revealed as
+/// its nearest existing ancestor, under the same rule, so a missing file inside
+/// an app bundle can never make `open` launch that bundle.
+fn reveal_target(p: &Path) -> Result<(PathBuf, bool), String> {
+    if !p.is_absolute() {
+        return Err(format!("{}: not an absolute path", p.display()));
+    }
+    let mut at = p.to_path_buf();
+    while !at.exists() {
+        match at.parent() {
+            Some(up) => at = up.to_path_buf(),
+            None => return Err(format!("{}: nothing to show", p.display())),
+        }
+    }
+    let open_folder = at.is_dir() && at.extension().is_none_or(|e| e != "app");
+    Ok((at, !open_folder))
+}
+
 fn reveal_unix(p: PathBuf) -> Result<(), String> {
-    if !p.exists() {
-        let parent = p.parent().map(Path::to_path_buf).unwrap_or(p);
-        return Command::new("open").arg(&parent).spawn().map(|_| ()).map_err(|e| e.to_string());
+    let (target, select) = reveal_target(&p)?;
+    let mut cmd = Command::new("open");
+    if select {
+        cmd.arg("-R");
     }
-    if p.is_dir() && p.extension().is_none_or(|e| e != "app") {
-        Command::new("open").arg(&p).spawn().map(|_| ()).map_err(|e| e.to_string())
-    } else {
-        Command::new("open").arg("-R").arg(&p).spawn().map(|_| ()).map_err(|e| e.to_string())
-    }
+    cmd.arg(&target).spawn().map(|_| ()).map_err(|e| e.to_string())
 }
 
 fn game_log_path(state: &State<'_, AppState>) -> PathBuf {

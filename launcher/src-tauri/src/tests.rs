@@ -605,3 +605,23 @@ fn keys_stay_out_of_backups_and_zips() {
     assert!(seen.iter().all(|b| !b.windows(6).any(|w| w == b"SECRET")));
     fs::remove_dir_all(&d).unwrap();
 }
+
+#[test]
+fn reveal_never_opens_an_app_bundle() {
+    let tmp = std::env::temp_dir().join(format!("pes13-reveal-{}", std::process::id()));
+    let app = tmp.join("Some.app");
+    std::fs::create_dir_all(&app).unwrap();
+    // A missing file inside a bundle selects the bundle instead of opening it.
+    let (t, select) = crate::reveal_target(&app.join("missing/file.txt")).unwrap();
+    assert_eq!(t, app);
+    assert!(select);
+    // The bundle itself is selected too.
+    let (_, select) = crate::reveal_target(&app).unwrap();
+    assert!(select);
+    // A plain folder opens; a missing file in it opens that folder.
+    let (t, select) = crate::reveal_target(&tmp.join("nope.log")).unwrap();
+    assert_eq!(t, tmp);
+    assert!(!select);
+    assert!(crate::reveal_target(std::path::Path::new("relative/path")).is_err());
+    std::fs::remove_dir_all(&tmp).unwrap();
+}
