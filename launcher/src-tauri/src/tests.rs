@@ -625,3 +625,22 @@ fn reveal_never_opens_an_app_bundle() {
     assert!(crate::reveal_target(std::path::Path::new("relative/path")).is_err());
     std::fs::remove_dir_all(&tmp).unwrap();
 }
+
+/// A developer's checkout gets nothing extra; only the installed port has its
+/// toolkit, venv and key file in the data folder.
+#[test]
+fn installed_port_environment() {
+    let d = tmp("port-env");
+    let st = Settings::default();
+    assert!(port_env(&d, &st).is_empty());
+    assert!(!is_installed_port(&d));
+    let p = install_layout().port();
+    assert!(is_installed_port(&p));
+    let e: BTreeMap<String, String> = port_env(&p, &st).into_iter().collect();
+    assert!(e["PS3RECOMP_DIR"].ends_with("pes13-recomp/toolkit"));
+    assert!(e["PES_VENV"].ends_with("pes13-recomp/venv"));
+    assert!(!e.contains_key("PES_KEYS"), "no key file chosen");
+    assert_eq!(toolkit_dir(&p), install_layout().toolkit());
+    assert_eq!(venv_python(&p), install_layout().venv().join("bin/python"));
+    fs::remove_dir_all(&d).unwrap();
+}

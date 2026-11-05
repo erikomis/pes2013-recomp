@@ -22,6 +22,7 @@
 
 mod app_icon;
 mod input_map;
+mod install;
 mod mods;
 mod play_shortcut;
 mod profiles;
@@ -210,6 +211,9 @@ pub struct Settings {
     pub save_backups_keep: u32,
     /// Look for new port sources on start (when the folder is a git checkout).
     pub auto_update_check: bool,
+    /// What the Install card was given last (install.rs), so a second press
+    /// continues with the same files.
+    pub install: install::Inputs,
 }
 
 impl Default for Settings {
@@ -288,6 +292,7 @@ impl Default for Settings {
             jobs: 0,
             save_backups_keep: 0,
             auto_update_check: true,
+            install: install::Inputs::default(),
         }
     }
 }
@@ -664,6 +669,32 @@ fn resolve_builds(root: &Path) -> Builds {
     }
 }
 
+fn install_layout() -> install::Layout {
+    install::Layout { data: data_root() }
+}
+
+/// The port folder "Install the game" made (and Play then uses).
+fn is_installed_port(root: &Path) -> bool {
+    let p = install_layout().port();
+    root == p || root.canonicalize().ok() == p.canonicalize().ok()
+}
+
+/// What tools/rebuild.sh needs on top of tools/env.sh's defaults for this port
+/// folder: an installed one has its toolkit, venv and key file in the data
+/// folder.
+fn port_env(root: &Path, s: &Settings) -> Vec<(String, String)> {
+    if !is_installed_port(root) {
+        return Vec::new();
+    }
+    let l = install_layout();
+    let mut v = vec![("PS3RECOMP_DIR".to_string(), self::s(&l.toolkit())), ("PES_VENV".to_string(), self::s(&l.venv()))];
+    let keys = s.install.keys.trim();
+    if !keys.is_empty() && Path::new(keys).is_file() {
+        v.push(("PES_KEYS".to_string(), keys.to_string()));
+    }
+    v
+}
+
 /// The folder this launcher lives in: launcher/src-tauri/../.. holds tools/.
 fn own_repo() -> Option<PathBuf> {
     let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
@@ -679,6 +710,10 @@ fn find_port_dirs_now() -> Vec<Builds> {
         cands.push(PathBuf::from(r));
     }
     cands.extend(own_repo());
+    // "Install the game"'s copy
+    if install_layout().port().join(RUN_SH).is_file() {
+        cands.push(install_layout().port());
+    }
     for base in ["Desktop", "Developer", "Documents", "Projects", "src", "code", "git", ""] {
         let dir = home().join(base);
         let Ok(it) = fs::read_dir(&dir) else { continue };
@@ -781,6 +816,8 @@ fn sessions_dir() -> PathBuf {
 #[derive(Default)]
 pub struct AppState {
     rebuild: Mutex<Option<u32>>,
+    /// `brew install` of what the build needs.
+    setup: Mutex<Option<u32>>,
     game: Mutex<Option<u32>>,
     /// A profile being created or deleted: the install's pid, or 0 for work the
     /// launcher does itself. Play and every other save change wait for it.
@@ -856,10 +893,6 @@ fn clt_installed() -> bool {
         .unwrap_or(false)
 }
 
-fn find_in_path(name: &str) -> Option<PathBuf> {
-    let file = format!("{name}{}", std::env::consts::EXE_SUFFIX);
-    std::env::split_paths(&tool_path()).map(|d| d.join(&file)).find(|p| p.is_file())
-}
 
 fn find_brew() -> Option<PathBuf> {
     ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].iter().map(PathBuf::from).find(|p| p.is_file())
@@ -2190,6 +2223,14 @@ pub struct Prereqs {
     disc: bool,
     builds_ok: bool,
     free_gb: Option<u64>,
+    /// Homebrew is installed, and the formulas the build still needs.
+    brew: bool,
+    brew_missing: Vec<String>,
+    /// The app carries the port's sources (Install the game can run).
+    stage: bool,
+    /// The space an install asks for, and where it would go.
+    need_gb: u64,
+    data_dir: String,
 }
 
 fn free_gb(p: &Path) -> Option<u64> {
@@ -2204,15 +2245,26 @@ const BUILD_MIN_GB: u64 = 4;
 /// The Python tools/env.sh uses (PES_VENV's), which also runs the launcher's
 /// calls to tools/install_savedata.py and tools/pes2013_edit.py.
 fn venv_python(root: &Path) -> PathBuf {
-    std::env::var_os("PES_VENV")
-        .filter(|v| !v.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| root.join("../deadpool-recomp/tools/.venv"))
-        .join("bin/python")
+    if let Some(v) = std::env::var_os("PES_VENV").filter(|v| !v.is_empty()) {
+        return PathBuf::from(v).join("bin/python");
+    }
+    let dev = root.join("../deadpool-recomp/tools/.venv/bin/python");
+    if is_installed_port(root) || !dev.is_file() {
+        install_layout().venv().join("bin/python")
+    } else {
+        dev
+    }
 }
 
 fn toolkit_dir(root: &Path) -> PathBuf {
-    std::env::var_os("PS3RECOMP_DIR").filter(|v| !v.is_empty()).map(PathBuf::from).unwrap_or_else(|| root.join("../ps3recomp-up-r8"))
+    if let Some(v) = std::env::var_os("PS3RECOMP_DIR").filter(|v| !v.is_empty()) {
+        return PathBuf::from(v);
+    }
+    if is_installed_port(root) {
+        install_layout().toolkit()
+    } else {
+        root.join("../ps3recomp-up-r8")
+    }
 }
 
 #[tauri::command]
@@ -2231,12 +2283,19 @@ async fn check_prereqs() -> Prereqs {
         } else {
             CheckItem::new("fail", "xcode-clt", "cltMissing", "not installed (Apple's installer: the compiler and git)")
         });
-        for tool in ["cmake", "ninja"] {
-            add(match find_in_path(tool) {
-                Some(f) => CheckItem::at("ok", tool, &f),
-                None => CheckItem::new("warn", tool, "toolMissing", "not found on PATH (needed only to rebuild)"),
+        let missing = install::brew_missing(&brew_prefix());
+        p.brew = find_brew().is_some();
+        for (formula, _) in install::BREW_NEEDS {
+            let name = formula.trim_end_matches("@3.12");
+            add(if !missing.contains(formula) {
+                CheckItem::new("ok", name, "brewOk", "installed (Homebrew)").path(&brew_prefix().join("opt").join(formula))
+            } else {
+                CheckItem::new("warn", name, "brewMissing", format!("missing: brew install {formula}")).var("cmd", format!("brew install {formula}"))
             });
         }
+        p.brew_missing = missing.iter().map(|m| m.to_string()).collect();
+        p.need_gb = install::NEED_GB;
+        p.data_dir = s(&data_root());
         let disc = find_disc(&st);
         let iso = root.as_deref().and_then(port_iso);
         p.disc = disc.is_some() || iso.is_some();
@@ -2293,6 +2352,147 @@ async fn check_prereqs() -> Prereqs {
     .unwrap_or_default()
 }
 
+/// The port's sources the app carries (scripts/stage_port.py, bundled as
+/// Resources/port), or in a development build the stage beside it.
+fn bundled_stage(app: &AppHandle) -> Option<PathBuf> {
+    let mut cands = Vec::new();
+    if let Ok(res) = app.path().resource_dir() {
+        cands.push(res.join("port"));
+    }
+    cands.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../stage/port"));
+    cands.into_iter().find(|p| install::is_stage(p)).map(|p| p.canonicalize().unwrap_or(p))
+}
+
+/// Advanced > Install / rebuild: `brew install` what the build still needs.
+/// Only after the player said yes in the window; streamed as setup-line /
+/// setup-exit.
+#[tauri::command]
+fn install_brew_deps(app: AppHandle, state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let brew = find_brew().ok_or("Homebrew is not installed (brew.sh)")?;
+    let missing = install::brew_missing(&brew_prefix());
+    if missing.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut slot = state.setup.lock().unwrap();
+    if slot.is_some() {
+        return Err("an install is already running".into());
+    }
+    let mut cmd = Command::new(&brew);
+    cmd.arg("install")
+        .args(&missing)
+        .env("PATH", tool_path())
+        .env("HOMEBREW_NO_AUTO_UPDATE", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    own_process_group(&mut cmd);
+    let child = cmd.spawn().map_err(|e| format!("brew: {e}"))?;
+    *slot = Some(child.id());
+    drop(slot);
+    let _ = app.emit("setup-line", format!("$ brew install {}", missing.join(" ")));
+    stream_child(&app, child, "setup", |s| &s.setup);
+    Ok(missing.iter().map(|m| m.to_string()).collect())
+}
+
+#[tauri::command]
+fn cancel_setup(state: State<'_, AppState>) {
+    if let Some(pid) = *state.setup.lock().unwrap() {
+        kill_tree(pid, false);
+    }
+}
+
+/// Home > "Install the game": install.zsh with the player's files, in the data
+/// folder, its output streamed as rebuild-line / rebuild-exit and kept in
+/// <data>/install.log. Pressing it again continues where it stopped.
+#[tauri::command]
+fn start_install(app: AppHandle, state: State<'_, AppState>, inputs: install::Inputs) -> Result<String, String> {
+    require_supported_host()?;
+    if state.game.lock().unwrap().is_some() || process_running(GAME_EXE) {
+        return Err("the game is running: close it first".into());
+    }
+    if state.profile_job.lock().unwrap().is_some() {
+        return Err("an Option File profile is being changed: wait for it to finish".into());
+    }
+    let mut slot = state.rebuild.lock().unwrap();
+    if slot.is_some() {
+        return Err("an install or a rebuild is already running".into());
+    }
+    if !clt_installed() {
+        return Err("clt".into());
+    }
+    if !install::brew_missing(&brew_prefix()).is_empty() {
+        return Err("brew".into());
+    }
+    let stage = bundled_stage(&app).ok_or("this app carries no port sources (a development build: run scripts/stage_port.py)")?;
+    let l = install_layout();
+    let game = l.port().join("game");
+    let checked = install::check(&inputs, game.join("EBOOT.elf").is_file(), game.join("EBOOT.BIN").is_file())?;
+    fs::create_dir_all(&l.data).map_err(|e| format!("{}: {e}", l.data.display()))?;
+    if let Some(gb) = free_gb(&l.data) {
+        let done = resolve_builds(&l.port()).ok;
+        if !done && gb < install::NEED_GB {
+            return Err(format!("disk:{gb}"));
+        }
+    }
+    let mut st = load_settings_file();
+    st.install = inputs;
+    write_settings(&st)?;
+    let mut cmd = Command::new("/usr/bin/nice");
+    cmd.args(["-n", "10", "/bin/zsh", "-c", install::SCRIPT])
+        .current_dir(&l.data)
+        .env("PATH", tool_path())
+        .env("TERM", "dumb")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        // the scripts find their folders from the install's environment
+        .env_remove("PES_ROOT")
+        .env_remove("PS3RECOMP_DIR")
+        .env_remove("PES_VENV")
+        .env_remove("PY")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for (k, v) in checked.env(&l, &stage) {
+        cmd.env(k, v);
+    }
+    if st.jobs > 0 {
+        cmd.env("JOBS", st.jobs.to_string());
+    }
+    own_process_group(&mut cmd);
+    let log = fs::File::create(l.log()).ok();
+    let child = cmd.spawn().map_err(|e| format!("zsh: {e}"))?;
+    *slot = Some(child.id());
+    drop(slot);
+    let first = format!("$ install   # into {}", l.data.display());
+    if let Some(mut f) = log.as_ref().and_then(|f| f.try_clone().ok()) {
+        use std::io::Write;
+        let _ = writeln!(f, "{first}");
+    }
+    let _ = app.emit("rebuild-line", first);
+    stream_child_logged(&app, child, "rebuild", |s| &s.rebuild, log);
+    Ok(s(&l.port()))
+}
+
+/// After a successful install: Play uses the installed port, and the Option File
+/// the install made (if any) becomes the active profile.
+#[tauri::command]
+fn install_finished(state: State<'_, AppState>) -> Result<(), String> {
+    if game_busy(&state) {
+        return Err(BUSY.into());
+    }
+    let mut st = load_settings_file();
+    let port = install_layout().port();
+    if !resolve_builds(&port).ok {
+        return Err(format!("{}: the build is not complete", port.display()));
+    }
+    st.port_dir = s(&port);
+    if let Ok(p) = profiles::resolve(&profile_store(&st), "local:Option File") {
+        if !st.install.option_file.trim().is_empty() {
+            st.active_profile = p.id;
+        }
+    }
+    write_settings(&st)
+}
+
 #[tauri::command]
 fn install_clt() -> Result<(), String> {
     Command::new("xcode-select")
@@ -2307,17 +2507,30 @@ fn install_clt() -> Result<(), String> {
 
 /// Stream a child's stdout and stderr to the window as `<event>-line`, and
 /// its exit code as `<event>-exit`; `slot` holds its pid while it runs.
-fn stream_child(app: &AppHandle, mut child: std::process::Child, event: &'static str, which: fn(&AppState) -> &Mutex<Option<u32>>) {
+fn stream_child(app: &AppHandle, child: std::process::Child, event: &'static str, which: fn(&AppState) -> &Mutex<Option<u32>>) {
+    stream_child_logged(app, child, event, which, None)
+}
+
+/// stream_child, each line also written to `log` (the install's log file).
+fn stream_child_logged(app: &AppHandle, mut child: std::process::Child, event: &'static str, which: fn(&AppState) -> &Mutex<Option<u32>>, log: Option<fs::File>) {
+    use std::io::Write;
+    let log = std::sync::Arc::new(Mutex::new(log));
     let (stdout, stderr) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
-    let a1 = app.clone();
+    let (a1, l1) = (app.clone(), log.clone());
     thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if let Some(f) = l1.lock().unwrap().as_mut() {
+                let _ = writeln!(f, "{line}");
+            }
             let _ = a1.emit(&format!("{event}-line"), line);
         }
     });
-    let a2 = app.clone();
+    let (a2, l2) = (app.clone(), log);
     thread::spawn(move || {
         for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            if let Some(f) = l2.lock().unwrap().as_mut() {
+                let _ = writeln!(f, "{line}");
+            }
             let _ = a2.emit(&format!("{event}-line"), line);
         }
     });
@@ -2377,6 +2590,9 @@ fn start_rebuild(app: AppHandle, state: State<'_, AppState>, req: RebuildRequest
     if let Some(j) = req.jobs.filter(|j| *j > 0) {
         cmd.env("JOBS", j.to_string());
     }
+    for (k, v) in port_env(&root, &st) {
+        cmd.env(k, v);
+    }
     own_process_group(&mut cmd);
     let child = cmd.spawn().map_err(|e| format!("zsh: {e}"))?;
     *slot = Some(child.id());
@@ -2384,6 +2600,11 @@ fn start_rebuild(app: AppHandle, state: State<'_, AppState>, req: RebuildRequest
     let _ = app.emit("rebuild-line", format!("$ cd {} && tools/rebuild.sh {}", root.display(), if req.steps.is_empty() { STEPS.join(" ") } else { req.steps.join(" ") }));
     stream_child(&app, child, "rebuild", |s| &s.rebuild);
     Ok(())
+}
+
+#[tauri::command]
+fn install_log_path() -> String {
+    s(&install_layout().log())
 }
 
 #[tauri::command]
@@ -2458,7 +2679,7 @@ fn pull_sources(app: AppHandle, state: State<'_, AppState>) -> Result<(), String
 // Links, files, the log
 // ---------------------------------------------------------------------------
 
-const URL_ALLOWED: &[&str] = &["https://brew.sh/", "https://github.com/sp00nznet/ps3recomp"];
+const URL_ALLOWED: &[&str] = &["https://brew.sh/", "https://github.com/sp00nznet/ps3recomp", "https://github.com/erikomis/pes2013-recomp", "https://github.com/erikomis/ps3recomp"];
 
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
@@ -3324,6 +3545,11 @@ pub fn run() {
             pull_sources,
             check_prereqs,
             install_clt,
+            install_brew_deps,
+            cancel_setup,
+            start_install,
+            install_finished,
+            install_log_path,
             open_url,
             start_rebuild,
             cancel_rebuild,
@@ -3376,8 +3602,10 @@ pub fn run() {
             // groups, by pid). The game keeps running, as it would from a shell.
             if let tauri::RunEvent::Exit = ev {
                 let st = app.state::<AppState>();
-                if let Some(pid) = *st.rebuild.lock().unwrap() {
-                    kill_tree(pid, false);
+                for slot in [&st.rebuild, &st.setup] {
+                    if let Some(pid) = *slot.lock().unwrap() {
+                        kill_tree(pid, false);
+                    }
                 }
                 let job = st.profile_job.lock().unwrap().filter(|p| *p > 0);
                 if let Some(pid) = job {

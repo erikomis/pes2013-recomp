@@ -1,13 +1,15 @@
-// The rebuild's progress, read from tools/rebuild.sh's output: each step starts
-// with a "==> <step>" line (zsh's bold escapes stripped), the next one ends it,
-// "==> done" ends the run. The weights are a step's rough share of a full
-// rebuild (the lift and the compile dominate).
+// The install's and the rebuild's progress, read from the scripts' output:
+// each step starts with a "==> <step>" line (zsh's bold escapes stripped), the
+// next one ends it. tools/rebuild.sh also prints "==> done" after its own steps,
+// which only closes the one running. The weights are a step's rough share of a
+// full install (the lift and the compile dominate).
 
-export const STEP_IDS = ["decrypt", "analyse", "lift", "spu", "build"] as const;
+export const STEP_IDS = ["sources", "toolkit", "venv", "game", "decrypt", "analyse", "lift", "spu", "build", "optionfile"] as const;
 export type StepId = (typeof STEP_IDS)[number];
 /** The steps Advanced > Install / rebuild lets the player pick. */
 export const PICK_IDS: StepId[] = ["decrypt", "analyse", "lift", "spu", "build"];
-const WEIGHT: Record<StepId, number> = { decrypt: 2, analyse: 6, lift: 35, spu: 6, build: 51 };
+const INSTALL_ONLY: StepId[] = ["sources", "toolkit", "venv", "game", "optionfile"];
+const WEIGHT: Record<StepId, number> = { sources: 1, toolkit: 2, venv: 3, game: 2, decrypt: 1, analyse: 6, lift: 30, spu: 6, build: 46, optionfile: 3 };
 
 export interface Step {
   id: StepId;
@@ -25,18 +27,20 @@ export class RebuildProgress {
   log: string[] = [];
   cancelled = false;
   started = 0;
-  /** "rebuild", or "pull" for Updates > Get the new sources (no steps). */
-  kind: "rebuild" | "pull" = "rebuild";
+  /** "rebuild", "install" (Home's Install the game: every step), or "pull"
+   * for Updates > Get the new sources (no steps). */
+  kind: "rebuild" | "install" | "pull" = "rebuild";
   /** The "ERROR: ..." lines the scripts printed. */
   errors: string[] = [];
 
-  reset(only: string[] = [], kind: "rebuild" | "pull" = "rebuild") {
+  reset(only: string[] = [], kind: "rebuild" | "install" | "pull" = "rebuild") {
     this.kind = kind;
     this.log = [];
     this.errors = [];
     this.cancelled = false;
     this.started = Date.now();
-    const want = (id: StepId) => !only.length || only.includes(id);
+    const want = (id: StepId) =>
+      kind === "install" ? (id !== "optionfile" || only.includes("optionfile")) : !INSTALL_ONLY.includes(id) && (!only.length || only.includes(id));
     this.steps = kind === "pull" ? [] : STEP_IDS.filter(want).map((id) => ({ id, state: "pending", start: 0, secs: 0 }));
   }
 

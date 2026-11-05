@@ -87,6 +87,7 @@ export interface Settings {
   jobs: number;
   saveBackupsKeep: number;
   autoUpdateCheck: boolean;
+  install: InstallInputs;
 }
 interface Builds {
   root: string;
@@ -167,6 +168,21 @@ interface Prereqs {
   disc: boolean;
   buildsOk: boolean;
   freeGb: number | null;
+  brew: boolean;
+  brewMissing: string[];
+  /** The app carries the port's sources: Install the game can run. */
+  stage: boolean;
+  needGb: number;
+  dataDir: string;
+}
+/** What the Install card is given (install.rs Inputs). */
+interface InstallInputs {
+  iso: string;
+  pkg: string;
+  keys: string;
+  pack: string;
+  optionFile: string;
+  saveKeys: string;
 }
 interface ReportInfo {
   dir: string;
@@ -605,6 +621,7 @@ function bindSettings() {
       discPath: settings.discPath,
       discImage: settings.discImage,
       activeProfile: settings.activeProfile,
+      install: settings.install,
       saveBackupsKeep: settings.saveBackupsKeep,
     };
     Object.assign(settings, DEFAULTS, keep);
@@ -731,6 +748,7 @@ function applyLang(l: Lang) {
   renderFinderIcon();
   renderProgress();
   renderPrereqs();
+  renderInstall();
   renderPort();
   renderDisc();
   renderControls();
@@ -792,6 +810,7 @@ const TITLE_ID = "BLUS31029";
 function blocker(): { title: Key; text: string; act: Key; run: () => void; act2?: Key; run2?: () => void } | null {
   if (!status || !status.hostSupported) return null;
   const b = status.builds;
+  if ((!b || !b.ok) && installCard()) return null; // the Install the game card says it all
   if (!b || !b.ok) {
     return {
       title: "block.builds",
@@ -843,6 +862,7 @@ function renderHome() {
     }
   }
   show($("home-pack"), !gameRunning && !block && !!b?.ok && !status.dataPack);
+  renderInstall();
 
   const play = $<HTMLButtonElement>("play");
   $("play-label").textContent = t(gameRunning ? "home.stop" : "home.play");
@@ -1324,6 +1344,263 @@ async function sessionAction(r: ReportInfo, what: "triage" | "zip") {
   renderSessions();
 }
 
+// ---- Home: Install the game --------------------------------------------------------
+// From the player's own files to Play in one go (src-tauri/src/install.zsh): the
+// port's sources the app carries, the ps3recomp toolkit, a Python environment,
+// the update .pkg, the disc image, the key file, then tools/rebuild.sh, with one
+// progress bar. Pressing it again after a quit or a failure continues where it
+// stopped.
+const INSTALL_MINUTES = "30–60";
+let installOutcome: "" | "done" | "failed" | "cancelled" = "";
+let installFacts: Prereqs | null = null;
+let installBusy = false;
+let cltWait = 0;
+
+/** The card shows on macOS while nothing is built, or while an install runs or
+ * has just ended. */
+function installCard(): boolean {
+  if (!status || !status.hostSupported || status.os !== "macos") return false;
+  return !status.builds?.ok || (progress.kind === "install" && (rebuildRunning || installOutcome !== ""));
+}
+
+async function refreshInstallFacts() {
+  if (!installCard()) return;
+  installFacts = await invoke<Prereqs>("check_prereqs").catch(() => installFacts);
+  renderInstall();
+}
+
+const INPUT_IDS: (keyof InstallInputs)[] = ["iso", "pkg", "keys", "pack", "optionFile", "saveKeys"];
+
+function renderInstall() {
+  const card = $("home-install");
+  const on = installCard() && !gameRunning;
+  show(card, on);
+  if (!on) return;
+  const live = progress.kind === "install" && rebuildRunning;
+  const f = installFacts;
+  const inp = settings.install;
+  for (const k of INPUT_IDS) {
+    const el = $(`inst-${k}`);
+    el.textContent = inp[k] ? tilde(inp[k]) : t(k === "pack" || k === "optionFile" ? "inst.none" : "inst.notChosen");
+    el.title = inp[k];
+  }
+  show($("inst-savekeys-row"), !!inp.optionFile);
+  card.querySelectorAll<HTMLButtonElement>("[data-pick], [data-clear]").forEach((b) => (b.disabled = live || installBusy));
+  const pill = $("inst-pill");
+  pill.className = "pill " + (installOutcome === "done" ? "" : "warm");
+  show(pill, live || installOutcome === "done");
+  pill.textContent = installOutcome === "done" ? t("inst.pillDone") : t("inst.pillRunning");
+  $("inst-lead").textContent = live
+    ? t("inst.leadRunning")
+    : !f || f.stage
+      ? t("inst.lead", { min: INSTALL_MINUTES, gb: f?.needGb ?? 10 })
+      : t("inst.noStage");
+  show($("inst-live"), live || installOutcome === "failed" || installOutcome === "cancelled");
+  const st = progress.stage();
+  $("inst-stage").textContent = cltWait ? t("inst.cltWaiting") : st ? t(`inst.stage.${st.id}` as Key) : t("inst.starting");
+  const frac = progress.fraction();
+  $("inst-bar").style.width = `${((live || installOutcome !== "" ? frac : 0) * 100).toFixed(1)}%`;
+  const eta = progress.etaMinutes();
+  const n = progress.steps.length;
+  const i = st ? progress.steps.indexOf(st) + 1 : 0;
+  $("inst-text").textContent = live
+    ? `${t("inst.stepN", { i, n })} · ${Math.floor(frac * 100)}%` + (eta !== null ? ` · ${t("install.eta", { min: Math.max(1, Math.round(eta)) })}` : "")
+    : "";
+  const failed = installOutcome === "failed" && !live;
+  show($("inst-error"), failed);
+  if (failed) {
+    const e = installError();
+    $("inst-error-text").textContent = e.text;
+    $("inst-error-detail").textContent = e.detail;
+  }
+  const start = $<HTMLButtonElement>("inst-start");
+  const done = installOutcome === "done";
+  show(start, !live && !cltWait && !done);
+  start.disabled = installBusy || gameRunning || (rebuildRunning && !live) || (!!f && !f.stage);
+  start.textContent = t(failed || installOutcome === "cancelled" ? "inst.retry" : "inst.start");
+  show($("inst-cancel"), live || !!cltWait);
+  for (const id of ["inst-copy", "inst-showlog"]) show($(id), progress.kind === "install" && progress.log.length > 0);
+}
+
+/** The plain-language reason an install stopped, from the stage and the log. */
+function installError(): { text: string; detail: string } {
+  const log = progress.log.slice(-400).join("\n");
+  const detail = progress.errors[progress.errors.length - 1] ?? "";
+  const stage = progress.stage()?.id;
+  let key: Key = "inst.err.generic";
+  if (/No space left on device|only \d+ GB free/i.test(log)) key = "inst.err.disk";
+  else if (/Could not resolve host|Failed to connect|unable to access|Connection timed out|Network is unreachable|could not install the Python packages/i.test(log)) key = "inst.err.net";
+  else if (/REFUSED/.test(log)) key = "inst.err.refused";
+  else if (stage) key = `inst.err.${stage}` as Key;
+  return { text: t(key), detail };
+}
+
+async function pickInput(k: string) {
+  const files: Record<string, { name: string; ext: string[] } | null> = {
+    iso: { name: t("disc.imageFilter"), ext: ["iso", "ISO"] },
+    pkg: { name: "PKG", ext: ["pkg", "PKG"] },
+    keys: { name: "TXT", ext: ["txt"] },
+    packPkg: { name: "PKG", ext: ["pkg", "PKG"] },
+    saveKeys: { name: "TXT", ext: ["txt"] },
+    pack: null,
+    optionFile: null,
+  };
+  const f = files[k];
+  const p = f === null ? await open({ directory: true }) : await open({ filters: [{ name: f!.name, extensions: f!.ext }] });
+  if (typeof p !== "string") return;
+  const key = (k === "packPkg" ? "pack" : k) as keyof InstallInputs;
+  settings.install = { ...settings.install, [key]: p };
+  persist();
+  renderInstall();
+}
+
+/** Wait for Apple's Command Line Tools installer: true once they are there. */
+function waitForClt(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const tick = async () => {
+      if (!cltWait) return resolve(false); // cancelled
+      const p = await invoke<Prereqs>("check_prereqs").catch(() => null);
+      if (p?.clt) {
+        window.clearInterval(cltWait);
+        cltWait = 0;
+        installFacts = p;
+        renderInstall();
+        resolve(true);
+      }
+    };
+    cltWait = window.setInterval(tick, 5000);
+    renderInstall();
+  });
+}
+
+async function installGame() {
+  if (installBusy || rebuildRunning) return;
+  installBusy = true;
+  const msg = $("inst-msg");
+  msg.textContent = t("prereq.checking");
+  renderInstall();
+  try {
+    let p = await invoke<Prereqs>("check_prereqs");
+    installFacts = p;
+    const inp = settings.install;
+    if (!inp.iso || !inp.pkg || !inp.keys) {
+      msg.textContent = t("inst.needInputs");
+      return;
+    }
+    if (p.freeGb !== null && p.freeGb < p.needGb) {
+      msg.textContent = t("inst.diskLow", { free: p.freeGb, gb: p.needGb });
+      return;
+    }
+    if (installOutcome === "") {
+      const go = await ask(t("inst.ask", { min: INSTALL_MINUTES, gb: p.needGb }), { title: t("inst.title"), kind: "info", okLabel: t("inst.start"), cancelLabel: t("install.cancel") });
+      if (!go) {
+        msg.textContent = "";
+        return;
+      }
+    }
+    // Apple's Command Line Tools (the compiler and git): their installer, waited for
+    if (!p.clt) {
+      msg.textContent = t("inst.clt");
+      await invoke("install_clt").catch(() => undefined);
+      if (!(await waitForClt())) {
+        msg.textContent = "";
+        return;
+      }
+      p = await invoke<Prereqs>("check_prereqs");
+    }
+    // the build tools from Homebrew, only with the player's yes
+    if (p.brewMissing.length) {
+      if (!p.brew) {
+        msg.textContent = t("inst.noBrew", { cmd: `brew install ${p.brewMissing.join(" ")}` });
+        return;
+      }
+      const yes = await ask(t("inst.askBrew", { cmd: `brew install ${p.brewMissing.join(" ")}` }), { title: t("inst.title"), kind: "info", okLabel: t("prereq.brewInstall"), cancelLabel: t("install.cancel") });
+      if (!yes) {
+        msg.textContent = t("inst.brewNeeded", { cmd: `brew install ${p.brewMissing.join(" ")}` });
+        return;
+      }
+      msg.textContent = t("inst.brewRunning");
+      const ok = await brewInstall();
+      if (!ok) {
+        msg.textContent = t("inst.brewFailed");
+        return;
+      }
+    }
+    msg.textContent = "";
+    progress.reset(inp.optionFile ? ["optionfile"] : [], "install");
+    installOutcome = "";
+    $("log").textContent = "";
+    $("install-msg").textContent = "";
+    await invoke<string>("start_install", { inputs: inp });
+    rebuildRunning = true;
+  } catch (e) {
+    const err = String(e);
+    msg.textContent = err === "clt" ? t("inst.clt") : err === "brew" ? t("inst.brewNeeded", { cmd: "brew install cmake ninja sdl2 python@3.12" }) : err.startsWith("disk:") ? t("inst.diskLow", { free: err.slice(5), gb: installFacts?.needGb ?? 10 }) : err;
+  } finally {
+    installBusy = false;
+    renderProgress();
+    renderHome();
+  }
+}
+
+/** brew install of what is missing, followed in Advanced's log; true when it ended well. */
+let brewDone: ((ok: boolean) => void) | null = null;
+function brewInstall(): Promise<boolean> {
+  const pre = $("setup-log");
+  pre.textContent = "";
+  show(pre, true);
+  return new Promise((resolve) => {
+    brewDone = resolve;
+    invoke("install_brew_deps").catch((e) => {
+      brewDone = null;
+      $("prereq-msg").textContent = String(e);
+      resolve(false);
+    });
+  });
+}
+listen<string>("setup-line", (ev) => {
+  const pre = $("setup-log");
+  pre.textContent += ev.payload + "\n";
+  pre.scrollTop = pre.scrollHeight;
+});
+listen<number>("setup-exit", (ev) => {
+  show($("setup-cancel"), false);
+  $("prereq-msg").textContent = ev.payload === 0 ? t("prereq.brewDone") : t("prereq.brewFailed", { code: ev.payload });
+  brewDone?.(ev.payload === 0);
+  brewDone = null;
+  refreshPrereqs();
+});
+
+$("inst-start").addEventListener("click", installGame);
+document.querySelectorAll<HTMLElement>("#home-install [data-pick]").forEach((b) => b.addEventListener("click", () => pickInput(b.dataset.pick!)));
+document.querySelectorAll<HTMLElement>("#home-install [data-clear]").forEach((b) =>
+  b.addEventListener("click", () => {
+    const k = b.dataset.clear as keyof InstallInputs;
+    settings.install = { ...settings.install, [k]: "", ...(k === "optionFile" ? { saveKeys: "" } : {}) };
+    persist();
+    renderInstall();
+  }));
+$("inst-cancel").addEventListener("click", async () => {
+  if (cltWait) {
+    window.clearInterval(cltWait);
+    cltWait = 0;
+    $("inst-msg").textContent = "";
+    renderInstall();
+    return;
+  }
+  const yes = await ask(t("inst.askCancel"), { title: t("install.cancel"), kind: "warning", okLabel: t("install.cancel"), cancelLabel: t("inst.keepGoing") });
+  if (!yes) return;
+  progress.cancelled = true;
+  invoke("cancel_rebuild");
+});
+$("inst-copy").addEventListener("click", async () => {
+  await navigator.clipboard.writeText(progress.log.join("\n"));
+  $("inst-msg").textContent = t("inst.copied");
+});
+$("inst-showlog").addEventListener("click", async () => {
+  invoke("reveal", { path: await invoke<string>("install_log_path") });
+});
+
 // ---- install: 1. requirements ------------------------------------------------------
 let prereqs: Prereqs | null = null;
 let cltPoll = 0;
@@ -1373,7 +1650,9 @@ function prereqActions(c: CheckItem): HTMLButtonElement[] {
       return [button("disc.mount", mountImage)];
     case "cmake":
     case "ninja":
-      return [button("prereq.getBrew", () => invoke("open_url", { url: "https://brew.sh/" }))];
+    case "sdl2":
+    case "python":
+      return prereqs?.brew ? [] : [button("prereq.getBrew", () => invoke("open_url", { url: "https://brew.sh/" }))];
     case "builds":
       return [button("port.pickShort", pickPortDir)];
     default:
@@ -1429,6 +1708,7 @@ function renderPrereqs() {
       : t("prereq.allOk");
   $("card-prereqs").classList.toggle("done", p.ok);
   show($("prereq-fix"), status?.os === "macos" && !p.clt);
+  show($("prereq-brew"), p.clt && p.brew && p.brewMissing.length > 0);
 }
 
 async function installClt() {
@@ -1444,6 +1724,14 @@ async function installClt() {
 }
 
 $("prereq-fix").addEventListener("click", installClt);
+$("prereq-brew").addEventListener("click", async () => {
+  if (!prereqs) return;
+  const cmd = `brew install ${prereqs.brewMissing.join(" ")}`;
+  if (!(await ask(t("inst.askBrew", { cmd }), { title: t("prereq.brewInstall"), kind: "info" }))) return;
+  show($("setup-cancel"), true);
+  await brewInstall();
+});
+$("setup-cancel").addEventListener("click", () => invoke("cancel_setup"));
 $("prereq-recheck").addEventListener("click", refreshPrereqs);
 
 // ---- install: 2. the port folder --------------------------------------------------
@@ -1594,6 +1882,7 @@ function renderProgress() {
   $("progress-text").textContent = rebuildRunning
     ? `${Math.floor(frac * 100)}%` + (eta !== null ? ` · ${t("install.eta", { min: Math.max(1, Math.round(eta)) })}` : "")
     : "";
+  renderInstall();
 }
 
 let frame = 0;
@@ -1618,6 +1907,19 @@ listen<number>("rebuild-exit", (ev) => {
   else msg.textContent = t("install.failed", { code });
   msg.className = code === 0 ? "ok" : "bad";
   progress.finish(code === 0);
+  if (progress.kind === "install") {
+    installOutcome = progress.cancelled ? "cancelled" : code === 0 ? "done" : "failed";
+    $("inst-msg").textContent = installOutcome === "done" ? t("inst.done") : installOutcome === "cancelled" ? t("inst.cancelled") : "";
+    if (installOutcome === "done") {
+      invoke("install_finished")
+        .then(async () => {
+          settings = await invoke<Settings>("get_settings");
+          renderPort();
+          refreshStatus();
+        })
+        .catch((e) => ($("inst-msg").textContent = String(e)));
+    }
+  }
   flushLog();
   refreshStatus();
   refreshUpdates(false);
@@ -1699,6 +2001,7 @@ async function main() {
   initTrophies();
   applyLang(settings.uiLang as Lang);
   await refreshStatus();
+  void refreshInstallFacts();
   refreshReport();
   refreshShaderCache();
   void refreshUpdates(settings.autoUpdateCheck ?? true);
@@ -1709,7 +2012,7 @@ async function main() {
   const view = await invoke<string | null>("take_start_view").catch(() => null);
   const [page, tab] = (view ?? "").split(":");
   if (playNow && status?.builds?.ok && status.hostSupported && !gameRunning && !rebuildRunning) await startGame(false);
-  else if (status && !status.builds?.ok) showView("advanced", "install");
+  else if (status && !status.builds?.ok && !installCard()) showView("advanced", "install");
   else if (page && ["home", "graphics", "performance", "game", "optionfile", "controls", "advanced"].includes(page)) showView(page, tab || undefined);
 }
 main().catch(reportError);

@@ -38,6 +38,7 @@ def fingerprint(data):  # spu_workload_fingerprint
     return f"{h:016X}"
 
 spu = f"{root}/port/spu"
+os.makedirs(f"{root}/cache", exist_ok=True)   # an installed copy starts without it
 lifted = []
 for ea, size, what in JOBS:
     data = eboot_bytes(ea, size)

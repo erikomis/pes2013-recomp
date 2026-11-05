@@ -20,12 +20,69 @@ cd launcher
 npm ci
 npx tsc --noEmit                      # the frontend's types
 (cd src-tauri && cargo test -j 2)     # the backend's tests
-npm run tauri build -- --bundles app  # src-tauri/target/release/bundle/macos/PES 2013 Launcher.app
+npm run release                       # stage the port's sources, build the .app and the .dmg, check both
 ```
+
+`npm run release` is `scripts/stage_port.py` (the port's sources into
+`launcher/stage/port`, ignored by git), `tauri build --config
+src-tauri/tauri.bundle.conf.json` (bundles that folder as `Resources/port`,
+targets app and dmg) and `scripts/check_bundle.py` on both results.
 
 On this machine, build only when no `PES2013Recomp` is running and with
 `nice` (the repository's `AGENTS.md`). `node_modules`, `dist` and
 `src-tauri/target` are ignored.
+
+## Install the game
+
+The repository is private, so the app carries the port's own sources instead of
+cloning them: `scripts/stage_port.py` copies `LICENSE`, `CREDITS*.md`, the four
+files of `port/`, `patches/ps3recomp-675ed39-pes13.patch` and the tools an
+install and Play run (`env.sh`, `run.sh`, `rebuild.sh`, `build.sh`,
+`lift_spu.sh`, `lift_jobs.sh`, `setup_toolkit.sh`, `decrypt_self.py`,
+`install_savedata.py`, `pes2013_edit.py`), with a `BUILD_INFO.json` naming the
+commit. Nothing lifted, no game file and no key.
+
+Home shows the **Install the game** card while nothing is built. The player
+chooses:
+
+- the US disc image (`.iso`, BLUS31029),
+- the 01.04 update (`.pkg`; its header's content id must name BLUS31029),
+- a key file in `self_keys.txt` format (NPDRM keys up to revision 0x19 and
+  `NP_klic_free`); nothing ships with the app, and the launcher only checks that
+  the file exists and hands its path to `tools/decrypt_self.py`,
+- optionally the Data Pack 6 folder (linked) or `.pkg` (extracted), and an
+  Option File folder with its `savedata_keys.txt`.
+
+Then `src-tauri/src/install.zsh` runs in `~/Library/Application Support/pes13-recomp/`
+(its own process group, under `nice`, Cancel stops the group), each step
+announced as `==> <step>` for the progress bar, its output also in
+`install.log`:
+
+1. **prerequisites** (before the script): Apple's Command Line Tools (their
+   installer, waited for) and `cmake ninja sdl2 python@3.12` from Homebrew,
+   installed only after the player says yes to the `brew install` line shown;
+2. **sources**: the bundled stage into `port/` (rsync, never deleting what earlier
+   runs made);
+3. **toolkit**: `port/tools/setup_toolkit.sh toolkit/` clones the public
+   `erikomis/ps3recomp` branch `deadpool-gameplay`, checks out 675ed394 and
+   applies the patch (already patched: left alone);
+4. **venv**: `venv/` from Python 3.12 with the toolkit's `requirements.txt` and
+   `pycryptodome` (kept once complete);
+5. **game**: the toolkit's `tools/pkg_extract.py` extracts the update into
+   `port/game/` (EBOOT.BIN, PARAM.SFO, ICON0.PNG, PS3LOGO.DAT), checking its
+   PARAM.SFO says BLUS31029 01.04; `port/game_iso/BLUS31029.iso` becomes a link
+   to the image; the data pack is linked or extracted to
+   `port/BLUS31029_DOWNLOAD`;
+6. **decrypt, analyse, lift, spu, build**: `port/tools/rebuild.sh <step>` with
+   `PS3RECOMP_DIR`, `PES_VENV` and `PES_KEYS` pointing at the folders above; a
+   step that succeeded is skipped on the next run until `game/EBOOT.elf`
+   changes, and the build is incremental;
+7. **optionfile**: `tools/install_savedata.py` into a new profile, `Option File`
+   (never into an existing one).
+
+When it ends well, Play uses `port/` (the port folder setting) and the Option
+File profile becomes the active one. A developer keeps using a checkout:
+Advanced > Install / rebuild > the port folder.
 
 ## What Play does
 
@@ -194,10 +251,9 @@ release check for when `REPO` is set.
 
 ## Left out, and why
 
-- The one-click **Install the game** card (it clones a public repository and
-  runs `tools/install.sh`, neither of which this port has).
-- The build-tools bootstrap and the RPCS3 decrypt fallback: this port decrypts
-  with `tools/rebuild.sh decrypt` and its own key file.
+- The build-tools bootstrap of other ports (Homebrew is used instead) and the
+  RPCS3 decrypt fallback: this port decrypts with `tools/decrypt_self.py` and the
+  player's key file.
 - The play-folder setting and the first-boot HDD install: saves are profiles,
   and this title reads its data from the disc.
 - Resistance 2's draw-engine switches (`PS3RECOMP_ENG_ZETA16_GPU`,

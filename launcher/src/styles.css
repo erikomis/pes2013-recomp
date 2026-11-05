@@ -594,3 +594,9 @@ select.pad-pick { min-width: 0; width: auto; margin-left: 6px; padding: 3px 28px
 .pf-head strong { font-family: var(--display); font-weight: 500; font-size: 16px; letter-spacing: 0.02em; }
 .pf-actions { margin-top: 6px; }
 #pf-name, #pf-ext-name { width: 260px; }
+
+/* Install the game: the player's files */
+.inst-inputs { display: grid; gap: 6px; margin: 12px 0 6px; }
+.inst-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid rgba(38, 42, 49, 0.6); }
+.inst-row .inst-label { flex: 0 0 300px; font-size: 13px; }
+.inst-row .path { flex: 1; min-width: 200px; overflow-wrap: anywhere; }

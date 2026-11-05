@@ -31,6 +31,7 @@
     qos: true, putDoorbell: true, paceLogS: 0, padLog: false, telemetry: false, drainSpikeMs: 0, vcacheStats: false, keepAwake: true,
     video: true, ffmpegAvcodec: "", ffmpegAvutil: "", verboseLog: false, extraEnv: "", rebuildSteps: [], jobs: 0, saveBackupsKeep: 0,
     autoUpdateCheck: true,
+    install: { iso: flags.noBuilds ? `${home}/Games/PES 2013 (USA).iso` : "", pkg: "", keys: "", pack: "", optionFile: "", saveKeys: "" },
   };
   // what the real build/BLUS31029/PES2013Recomp holds today
   const today = [
@@ -109,7 +110,8 @@
         msg("ok", "disk", "diskEnough", "22 GB free", { free: "22" }),
         ok("builds", root),
       ];
-      return { supported: true, clt: true, checks, ok: true, disc: !flags.noDisc, buildsOk: !flags.noBuilds, freeGb: 22 };
+      return { supported: true, clt: true, checks, ok: true, disc: !flags.noDisc, buildsOk: !flags.noBuilds, freeGb: 22,
+        brew: true, brewMissing: flags.noBuilds ? ["sdl2"] : [], stage: true, needGb: 10, dataDir: data };
     },
     profiles_list: () => ({ profiles, active: "padrao", gameRunning: !!flags.running, busy: false, keys: true, python: true }),
     list_trophies: () => {
@@ -127,6 +129,7 @@
     launch_preview: () => `cd ${root} && PES_ROOT=${root} PS3_GAMEDATA_ROOT=${root}/rpcs3 PS3_AA=fxaa PS3_SHARPEN=0.20 /usr/bin/caffeinate -i /bin/zsh ${root}/tools/run.sh > '${data}/last.log' 2>&1   # each line stamped with the seconds since launch into last.log`,
     read_game_log: () => ({ path: `${data}/last.log`, exists: true, size: log.length, modified: now - 120, text: log, truncated: false }),
     log_paths: () => ({ game: `${data}/last.log`, saves: padrao.savedata, data, sessions: `${data}/logs` }),
+    install_log_path: () => `${data}/install.log`,
     take_play_request: () => false,
     take_start_view: () => flags.view || null,
     frontend_log: (a) => console.warn("frontend:", a.message),

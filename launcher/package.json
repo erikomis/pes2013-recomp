@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "typecheck": "tsc --noEmit",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "stage": "python3 scripts/stage_port.py",
+    "release": "python3 scripts/stage_port.py && tauri build --config src-tauri/tauri.bundle.conf.json && python3 scripts/check_bundle.py \"src-tauri/target/release/bundle/macos/PES 2013 Launcher.app\" src-tauri/target/release/bundle/dmg/*.dmg"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

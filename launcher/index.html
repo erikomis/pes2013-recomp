@@ -92,6 +92,41 @@
           <button id="home-blocker-act2" class="hidden"></button>
         </div>
 
+        <!-- Install the game: from the player's own files to Play in one go -->
+        <div id="home-install" class="card install-card hidden">
+          <div class="row step-head">
+            <h2 data-i18n="inst.title">Instalar o jogo</h2>
+            <span id="inst-pill" class="pill hidden"></span>
+          </div>
+          <p id="inst-lead" class="hint"></p>
+          <div id="inst-inputs" class="inst-inputs">
+            <div class="inst-row"><span class="inst-label" data-i18n="inst.iso">Imagem do disco (.iso, BLUS31029)</span><code id="inst-iso" class="path"></code><button data-pick="iso" data-i18n="ui.pick">Escolher…</button></div>
+            <div class="inst-row"><span class="inst-label" data-i18n="inst.pkg">Atualização 01.04 (.pkg)</span><code id="inst-pkg" class="path"></code><button data-pick="pkg" data-i18n="ui.pick">Escolher…</button></div>
+            <div class="inst-row"><span class="inst-label" data-i18n="inst.keys">Arquivo de chaves (self_keys.txt)</span><code id="inst-keys" class="path"></code><button data-pick="keys" data-i18n="ui.pick">Escolher…</button></div>
+            <div class="inst-row"><span class="inst-label"><span data-i18n="inst.pack">Data Pack 6</span> <span class="pill muted-pill" data-i18n="prereq.optionalTag">opcional</span></span><code id="inst-pack" class="path"></code><button data-pick="pack" data-i18n="inst.pickFolder">Pasta…</button><button data-pick="packPkg" data-i18n="inst.pickPkg">.pkg…</button><button data-clear="pack" class="link" data-i18n="settings.lutClear">Tirar</button></div>
+            <div class="inst-row"><span class="inst-label"><span data-i18n="inst.optionFile">Option File (pasta de saves do PS3)</span> <span class="pill muted-pill" data-i18n="prereq.optionalTag">opcional</span></span><code id="inst-optionFile" class="path"></code><button data-pick="optionFile" data-i18n="inst.pickFolder">Pasta…</button><button data-clear="optionFile" class="link" data-i18n="settings.lutClear">Tirar</button></div>
+            <div id="inst-savekeys-row" class="inst-row hidden"><span class="inst-label" data-i18n="inst.saveKeys">Chaves do Option File (savedata_keys.txt)</span><code id="inst-saveKeys" class="path"></code><button data-pick="saveKeys" data-i18n="ui.pick">Escolher…</button></div>
+          </div>
+          <div id="inst-live" class="hidden">
+            <div id="inst-stage" class="inst-stage"></div>
+            <div class="progress"><div id="inst-bar"></div></div>
+            <div id="inst-text" class="small muted"></div>
+          </div>
+          <div id="inst-error" class="banner hidden">
+            <strong data-i18n="inst.err.title">A instalação parou</strong>
+            <p id="inst-error-text"></p>
+            <p id="inst-error-detail" class="small muted"></p>
+          </div>
+          <p id="inst-msg" class="small"></p>
+          <div class="row actions">
+            <button id="inst-start" class="primary big" data-i18n="inst.start">Instalar o jogo</button>
+            <button id="inst-cancel" class="danger hidden" data-i18n="install.cancel">Cancelar</button>
+            <button id="inst-copy" class="link hidden" data-i18n="install.copyLog">Copiar log</button>
+            <button id="inst-showlog" class="link hidden" data-i18n="inst.showLog">Mostrar o arquivo de log</button>
+            <button class="link" data-go="advanced:install" data-i18n="inst.advanced">Usar uma pasta do port existente</button>
+          </div>
+        </div>
+
         <div id="home-pack" class="notice-bar hidden">
           <svg class="ico"><use href="#i-alert" /></svg>
           <div class="grow small" data-i18n="home.noPack"></div>
@@ -782,9 +817,12 @@
             <ul id="prereqs" class="prereqs"></ul>
             <div class="row actions">
               <button id="prereq-fix" class="primary hidden" data-i18n="prereq.installClt">Instalar as Command Line Tools</button>
+              <button id="prereq-brew" class="primary hidden" data-i18n="prereq.brewInstall">Instalar o que falta (Homebrew)</button>
+              <button id="setup-cancel" class="danger hidden" data-i18n="install.cancel">Cancelar</button>
               <button id="prereq-recheck" data-i18n="prereq.recheck">Verificar de novo</button>
             </div>
             <p id="prereq-msg" class="small"></p>
+            <pre id="setup-log" class="log short hidden"></pre>
           </div>
 
           <div id="card-port" class="card step">
