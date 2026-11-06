@@ -73,15 +73,56 @@ de competição. Todos os CRCs conferem. As dimensões de `ICON0.PNG` são apena
 da prévia; não definem as dimensões do recurso. O formato dos demais tipos
 ainda não foi decodificado.
 
-O Texture Replacement Manager do plano ainda precisa ser implementado e
-testado. Colocar uma imagem 2K no save de 256×256 não é uma solução validada.
+O runtime compartilhado agora contém substituição por assinatura via `PS3_MODS`,
+e o executável local contém `PS3_MODS_DUMP` (verificados em 05/11). Ainda falta
+validar a substituição das camisas deste projeto no jogo. Colocar uma imagem 2K
+no save de 256×256 não é uma solução validada.
 Prioridades: identificar texturas estáticas de gramado/uniformes/faces,
 substituição externa por assinatura, preservação de UV/alpha/mips, orçamento
 de memória e comparação visual em partida. Não há pacote HD ativo.
 
+### Captura isolada para identificar as camisas
+
+Execute `zsh tools/capturar_camisas_2026.command` com o jogo fechado. Usa o perfil
+Flamengo separado existente e desativa pacotes herdados do ambiente. Escolha o
+Flamengo e visualize as camisas 1 e 2. O processo criado pela ferramenta é
+encerrado após 180 segundos, ao observar 512 MiB gravados ou menos de 4 GiB
+livres (verificação a cada 2 segundos, portanto não é quota rígida).
+Não encerra processos anteriores e recusa iniciar se houver outro jogo aberto.
+
+Saída: `analysis/visual-2026/runtime-captures/<data>/textures/`, com PNGs nomeados
+pelas assinaturas reais e `textures.txt` do runtime; `boot.log` e `capture.json`
+ficam no diretório acima. Para gerar a galeria de identificação:
+
+```sh
+../deadpool-recomp/tools/.venv/bin/python tools/index_texture_capture.py \
+  analysis/visual-2026/runtime-captures/<data>/textures
+```
+
+A galeria ordena imagens 2:1 primeiro, mas não atribui clube ou função por
+proporção. Após conferir a imagem original, será possível associar sua assinatura
+à versão convertida. O runtime aplica o remapeamento de canais original também
+à substituição; conferir isso e a orientação no modelo antes de aprovar o pack.
+Preflight (`--check`) passou; captura interativa e substituição ainda pendentes.
+Três testes do parser de índice passaram. Nenhum save original modificado.
+
 ## Referência PES 2021
 
 ### Conversão UV experimental — 05/11/2026
+
+**Lote A/B concluído:** [galeria dos 80 atlas convertidos](../analysis/visual-2026/ab-kit-atlases/index.html),
+slots p1/p2 dos 40 clubes, 1024×512. `tools/prepare_ab_kit_atlases.py` processa
+sequencialmente e reutiliza resultados somente quando hashes da origem, mapa,
+ferramentas e PNG coincidem. Retomada conferida sem nova conversão.
+`tools/validate_ab_kit_atlases.py` validou a cobertura completa, hashes, dimensões,
+CRCs e payload descompactado dos 80 PNGs. Quatro testes adicionais verificam o
+validador, incluindo corrupção e truncamento; os três testes UV continuam passando.
+
+Isso amplia a preparação de Flamengo para todos os clubes A/B, **não a cobertura
+instalada no jogo**. O arquivo `visual-review.json` registra a amostra Palmeiras
+p1: faixas vermelhas ao lado do tronco existem tanto na origem quanto na conversão;
+a função dessas regiões precisa de conferência no modelo. Temporada e função
+titular/reserva ainda não aprovadas para o lote. Nenhuma face ou camisa ativada.
 
 `tools/extract_kit_uv_map.py` extraiu 7.305 pares de triângulos da tabela
 `triangles_pes2013_1024x512.pkl` do conversor já baixado. O executável não foi

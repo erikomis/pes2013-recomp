@@ -1,6 +1,6 @@
 # O que falta — PES 2013 no macOS
 
-Situação em 04/11/2026, tarde. Versão: disco americano BLUS31029, atualização 01.04. Lista de trabalho na ordem em que os problemas
+Situação em 05/11/2026 (itens alinhados com o `ROADMAP.pt-BR.md`). Versão: disco americano BLUS31029, atualização 01.04. Lista de trabalho na ordem em que os problemas
 aparecem. Os detalhes técnicos de cada subsistema ficam em `COMPATIBILITY.md`.
 
 **Como rodar:** `tools/run.sh > cache/boot-meu.log 2>&1` na raiz do projeto.
@@ -13,18 +13,21 @@ Fecha com `Ctrl+C`.
 | Logos, título, menus em português | Funcionam |
 | Seleção de times, escalações, hino | Funcionam: uniformes e rostos corretos, de perto |
 | Partida | Roda, com placar, relógio e minimapa, e não fecha |
-| Jogadores na câmera de jogo | Corrigidos em uma partida sem janela; falta confirmar em janela |
+| Jogadores na câmera de jogo | Funcionam: um amistoso foi jogado até o fim em janela |
 | Data Pack 6 e Option File | Instalados e carregados pelo jogo |
-| Controle físico, som, partida completa | A verificar |
+| Teclado e DualSense (SDL) | Funcionam |
+| Som | Funciona na partida; o início do replay ainda perde alguns blocos |
+| Partida completa | Funciona: amistoso jogado até o fim em janela |
 
 ## 1. Prioridade atual
 
-- [ ] **Confirmar os jogadores em janela:** sem janela, a partida não teve nenhuma textura
-      vazia. Falta confirmar na janela, com o executável final.
-- [ ] **Desempenho em janela:** sem janela, a partida faz 60 a 66 fps no jogo e cerca de 30 fps em
-      trechos como replays, usando cerca de 280% de CPU (antes, cerca de 18 fps e 414%). Falta medir
-      em janela e verificar travadinhas. A captura `PS3RECOMP_METAL_FRAME_DUMP` tem custo: deixe
-      de usar quando não precisar dela.
+- [x] **Confirmar os jogadores em janela:** um amistoso foi jogado até o fim em janela.
+- [ ] **Desempenho em janela:** sem janela e com a máquina livre, a partida faz 60,0 fps (p95
+      17,6 ms) e os replays 30,0 fps, com cerca de 133% de CPU (antes, cerca de 18 fps e 414%).
+      Falta medir em janela, com a build final, e verificar travadinhas. A captura
+      `PS3RECOMP_METAL_FRAME_DUMP` tem custo: deixe de usar quando não precisar dela.
+- [ ] **Pico no início do replay:** um quadro de 112-207 ms quando começa um replay ou troca a
+      cena; é onde estão os buracos de áudio que sobraram. Não é compilação de shader.
 - [ ] **Teclado virtual sem tela:** o nome do perfil é aceito automaticamente.
 
 ### Resolvido nesta rodada (sem commit)
@@ -93,39 +96,46 @@ com janela e teclado de verdade.
 
 - [ ] **Vídeos `.sfd`:** o fundo do menu usa `pes_topBG_*.sfd`. As tarefas de vídeo
       ficam em `WAIT_SIGNAL`; não está provado que decodifiquem.
-- [ ] **Controle:** o teclado funciona no menu; um controle físico não foi testado.
+- [x] **Controle:** teclado (Enter = START, Espaço = CROSS) e DualSense pelo SDL. Falta
+      mapear o esquema inteiro de controle do PES no launcher.
 - [ ] **Funções sem implementação:** `0x05C65656` (37 chamadas, biblioteca
       desconhecida), `inet_addr`, `sceNpSns` e `cellSysutilAvconfExt`. Até agora
       parecem inofensivas.
 
 ## 3. Para jogar uma partida (M2 a M5)
 
-- [ ] **Gráficos 3D:** a partida renderiza estádio cheio, os dois times, goleiros, árbitro e
-      bandeirinhas. Falta avaliar a qualidade em janela e ao longo de uma partida inteira.
+- [x] **Gráficos 3D:** a partida renderiza estádio cheio, os dois times, goleiros, árbitro e
+      bandeirinhas, em janela e ao longo de um amistoso inteiro.
 - [x] **Métodos RSX desconhecidos:** o log agora lista **um por método distinto**.
       A tabela tinha 4096 posições e descartava em silêncio todo método `>= 0x1000`
       (0x1D78, 0x1EA4, ...); corrigida para o espaço inteiro (`0x1FFC`). No log atual
       são 22 métodos distintos, todos de valor `0`/`0xFEED0000` (registradores), nenhum
       de geometria. Já está no executável atual.
-- [ ] **Som:** o mixer do jogo produz áudio correto, mas o CoreAudio deste Mac falhou ao abrir o
-      dispositivo (`-66681`), também no `afplay`. Reiniciar com `sudo killall coreaudiod` e
-      testar. A narração não foi testada.
+- [x] **Som:** o mixer do jogo roda em tempo real (48 kHz) sem buracos na partida. Resta o pico
+      no início do replay (seção 1). A falha `-66681` do CoreAudio era do Mac, não do porte.
+      A narração não foi testada.
 - [ ] **Saves:** salvar e carregar não foi validado. A Master League e o Rumo ao
       Estrelato dependem disso. As opções são gravadas em
       `rpcs3/dev_hdd0/home/00000001/savedata` e foram lidas de volta em um boot seguinte.
       Saves de jogo ainda não foram testados.
 - [ ] **Rede e troféus:** devem funcionar offline, sem travar. Não testado.
-- [ ] **Partida completa:** seleção de times → carregamento → partida → intervalo
-      → fim.
+- [x] **Partida completa:** seleção de times → carregamento → partida → intervalo
+      → fim. Um amistoso foi jogado até o fim em janela.
 
 ## 4. Depois de jogável (M6 a M9)
 
-Nada iniciado:
+Preparação parcial; itens abaixo ainda não concluídos:
 
 - [ ] M6: texturas HD
 - [ ] M7: elencos e uniformes Brasil 2026 — preparação iniciada: 40 clubes e
       2.050 registros CBF coletados, leitor de elencos do save implementado;
       atualização ainda não aplicada. Ver `BRAZIL_2026_DATA.md`.
+      Uniformes: 80 atlas experimentais p1/p2 dos 40 clubes convertidos e
+      validados como PNGs em 05/11. Faltam revisão visual/temporada, acabamento,
+      associação às assinaturas reais e teste no modelo 3D. Ver `VISUAL_2026.md`.
+      Novo perfil com 40 listas/1.054 nomes e números já gravado; 13 clubes em
+      slots genéricos. Integridade conferida, mas posições, atributos, visuais,
+      ligas e validação em campo pendentes. Ver `SAVE_BRASIL_40_2026.md`.
 - [ ] M8: presets de desempenho (a otimização de compilação já foi feita)
 - [ ] M9: launcher e distribuição sem dados do jogo
 
@@ -155,7 +165,7 @@ Option File carregado (`EEDIT`, emblemas e uniformes). A abertura com o assisten
 Português do Brasil foi até o carregamento do `EEDIT`.
 
 - **Sem save de opções:** a primeira abertura repete o assistente; escolha Português do Brasil.
-- **Não testado:** em janela, com teclado.
+- **Em janela, com teclado:** testado em 05/11, um amistoso jogado até o fim.
 
 ## Copas e visuais — atualização de 05/11/2026
 

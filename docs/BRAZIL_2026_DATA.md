@@ -1,8 +1,12 @@
 # Brasileirão A e B — atualização 2026
 
 Recorte solicitado: elencos mais recentes até **04/11/2026**.
-Estado: listas dos 40 clubes coletadas, leitor de elencos implementado;
-**nenhum elenco atualizado aplicado**.
+Estado em 05/11: **novo perfil experimental separado com 1.054 nomes/números e
+listas dos 40 clubes aplicado**. Os 13 restantes usam slots genéricos 2470–2482.
+Posições, atributos, aparências e ligas permanecem antigos. O original não mudou.
+Ver [SAVE_BRASIL_40_2026.md](SAVE_BRASIL_40_2026.md): integridade dos dados validada,
+carregamento/partida e acesso aos clubes pelos menus ainda não confirmados.
+O perfil anterior de 27 clubes continua preservado.
 Alvo local: PES 2013 PS3 BLUS31029, atualização 01.04, Data Pack 6.
 
 Decisão do usuário: **até 32 jogadores do profissional por clube**, priorizando
@@ -40,7 +44,9 @@ Ferramentas novas: `collect_recent_squads.py`, `collect_espn_squads.py` e
 `merge_squad_evidence.py`. As duas coletas usam cache e interrompem a rede após
 três falhas consecutivas. Dados de lesão, reforços sem partidas recentes, posições
 específicas, atributos, IDs PES e ligas ainda precisam de revisão/implementação.
-**Nenhuma dessas listas foi aplicada ao jogo.**
+Na etapa original nenhuma lista havia sido aplicada. Em 05/11, os registros
+confirmados dos 27 clubes mapeados foram usados no perfil experimental acima;
+isso não valida as propostas de identidade/posição nem o carregamento em jogo.
 
 Visual e importação de uniforme: ver [VISUAL_2026.md](VISUAL_2026.md).
 
