@@ -301,3 +301,18 @@ em `backup-fence/`, prévia em `analysis/visual-2026/adboards-2026/preview_fence
 
 Ainda não visto numa partida: a prévia do editor de estádios não mostra as placas. As placas de LED
 "PES 2013" dos estádios oficiais do jogo não mudam (vêm do atlas de logos do menu).
+
+## Bola de 2026 e primeira partida com tudo (06/11/2026)
+
+Não há bola do Brasileirão 2026 para nenhum PES. A bola real da Série A 2026 é a Nike Control
+(branca, bolinhas azuis, painéis em degradê azul-amarelo, escudo da CBF, swoosh verde). A bola
+padrão do PES 2013 é a textura `5603aaec998bf2bc` (512x512) e uma cópia mais escura
+`71bf0d61d9cece11`. `tools/make_ball_2026.py` desenha a Nike Control 2026 em 1024x1024 no mesmo
+layout (escudo da CBF da Wikimedia); pacote `bola-2026`. É um desenho a partir das fotos.
+
+Partida de teste sem janela, Flamengo x Santos em Wembley, `PS3_RES_SCALE=2`, prints a cada
+minuto (`analysis/visual-2026/match-2026/`): até 9:35 sem erro. Aplicados: `bola-2026` (as duas
+texturas), `brasil-2026-uniformes` e `brasil-2026-escudos`. **Não aplicados nessa partida:**
+`faces-2026` (as chaves foram capturadas em Editar > Jogadores; na partida o rosto usa outra
+textura, a investigar) e `gramado-hd` (Wembley usa outro gramado). Uniforme de goleiro continua o
+antigo (o pacote só tem as camisas 1 e 2 de linha).
