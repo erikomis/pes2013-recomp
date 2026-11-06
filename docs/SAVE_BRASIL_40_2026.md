@@ -210,3 +210,28 @@ Fàbregas e mais 30) e com jogadores conhecidos:
 
 Estado: a ferramenta foi testada numa cópia, com os primeiros clubes coletados. A coleta dos 89
 clubes ainda não terminou e nada disso está no perfil. Não visto no jogo.
+
+## Estádios (06/11/2026)
+
+O jogo tem só três estádios reais brasileiros: Maracanã, Morumbi e Vila Belmiro (Urbano
+Caldeira). Dos estádios da Libertadores e da Sul-Americana 2026, só o Monumental (River) existe.
+Colocar um estádio 3D novo exigiria converter o modelo inteiro para o PS3; não é feito aqui.
+
+Em Editar > Estádio > Edição de estádios há 34: os 14 do jogo que podem ser renomeados e os 20 do
+criador de estádios que vieram no Option File (15 a 34, com as cores de cada clube). No EDIT, cada
+um destes 20 é uma entrada de 372 bytes a partir de 0x51FACE: o nome duas vezes (+0 e +97) e depois
+as configurações. `tools/set_stadium_names.py` troca só os nomes (`stadiums_2026.json`):
+
+- renomeados para 2026: Ligga Arena, Neo Química Arena, Arena MRV, Arena Condá, Allianz Parque,
+  Nabi Abi Chedid, São Januário, Maião, Barradão, Mangueirão (no lugar de Ressacada, Scarpelli,
+  Serra Dourada, Independência, Metropolitano, Monumental duplicado, Atahualpa, Pacaembu, Arena
+  Pernambuco e Canindé); Minas Arena → Mineirão, Engenhão → Nilton Santos, Grêmio Arena → Arena do
+  Grêmio, Casa Blanca → Rodrigo Paz Delgado (LDU);
+- mantidos: Fonte Nova, Castelão, Couto Pereira, Beira-Rio, Moisés Lucarelli, Ilha do Retiro.
+
+A aparência de cada um continua a do estádio montado que já estava na vaga. O EDIT anterior ficou
+em `DATA.BIN.before-stadiums`. Visto no jogo, sem janela: os 20 nomes na lista. Não visto: uma
+partida num deles; se os times usam um estádio de casa, o campo do registro não foi achado.
+
+Outra tabela, de 20 nomes de 0x60 bytes em 0x37B448 (Frasqueirão, Independência...), não aparece
+nessa lista. O que ela faz não se sabe; não foi alterada.
