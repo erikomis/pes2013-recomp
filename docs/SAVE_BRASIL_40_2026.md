@@ -103,3 +103,26 @@ lista, uma partida, Liga e Master League com 20 na Série B.
 Risco conhecido: um trecho do jogo (0x00D37960) insere clubes na liga dos outros
 europeus com limite fixo de 40. Com o layout de 20, inserir mais de 14 clubes nela
 escreveria sobre a Série B. Nada no uso normal faz isso, mas não está provado.
+
+## Libertadores 2026 (05/11/2026, noite)
+
+A Libertadores do jogo é a competição 27: 38 clubes em vagas por país (ARG 5, BOL 3, BRA 6,
+CHI/COL/ECU/MEX/PAR/PER/URU/VEN 3). A lista vem dos dados do jogo, não do EDIT; o port a troca
+pela de `gamedata/pes13_competitions.txt` do perfil quando tem o mesmo tamanho
+(`port/pes_leagues.cpp`). Sem esse arquivo, o jogo usa a sua.
+
+- Os 32 da fase de grupos de 2026 mais The Strongest, Huachipato, Botafogo, Guaraní, Liverpool e
+  Táchira (fase prévia). As vagas do México ficaram com Independiente Rivadavia, Tolima e Botafogo.
+- Os 6 brasileiros são os clubes da liga (Flamengo, Fluminense, Cruzeiro, Corinthians, Palmeiras,
+  Mirassol): elencos, uniformes e escudos de 2026.
+- 13 vagas de clubes de 2013 renomeadas (`libertadores_2026_names.json`); o EDIT anterior ficou em
+  `DATA.BIN.before-libertadores`. **Os elencos desses 13 ainda são os do clube antigo**: a tabela
+  de elencos das equipes continentais não está decifrada. Os outros estrangeiros têm os elencos
+  do Option File (temporada antiga).
+- Escudos: pacote `libertadores-2026-escudos` (13 escudos da Wikipédia/Wikimedia, 256x256).
+  Uniformes dos estrangeiros: nenhum de 2026 ainda.
+
+Visto no jogo, sem janela: o seletor da Libertadores mostra os 38 clubes de 2026 com os escudos
+certos (Cusco não apareceu na captura). Não visto: sorteio, fase de grupos, uma partida da copa.
+
+Para jogar: os três pacotes juntos, `PS3_MODS=libertadores-2026-escudos,brasil-2026-escudos,brasil-2026-uniformes`.
