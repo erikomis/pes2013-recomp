@@ -283,3 +283,21 @@ ficam limpas). Pacote `gramado-hd`. Visto numa partida de demonstração sem jan
 `PS3_RES_SCALE=2` (2560x1440): a troca foi aplicada e o campo fica nítido. Outros estádios podem
 usar outra textura de gramado; essas ainda não foram capturadas. Não é uma grama nova, e sim a do
 jogo com mais detalhe.
+
+## Placas de 2026 (06/11/2026)
+
+Fonte: pacote de placas do Brasil 2025/26 do LeonardoBorges para PES 2021 (`Brazil Pack.rar`,
+baixado pelo dono no navegador; só texturas e modelos, nenhum executável). As artes usadas:
+Betano, Assaí, Sicoob, Betnacional (`90systemAd_face_09`) e a faixa "BRASILEIRÃO Betano" (`BR25`).
+
+Os 195 saves `BLUS31029EST_FENCE<nnn>` são as placas, faixas e bandeiras dos 20 estádios do
+criador de estádios: cabeçalho de 49 bytes (CRC32 em +8, como os uniformes) e um DDS 512x256 DXT5
+com 10 mipmaps; a placa é a faixa opaca da imagem (linhas 84 a 170 na maioria). 70 deles foram
+escolhidos à mão como placas de patrocinador de 2013 (Penalty, Lupo, Nike, Coca-Cola, Lotto, BMG,
+Samsung, Sky Sports, Carlsberg...); faixas de torcida, bandeiras e peças de estrutura ficaram.
+`tools/make_fence_2026.py` refaz a faixa de cada um com três logos ou a faixa do Brasileirão,
+recodifica em DXT5 com todos os mipmaps e recalcula o CRC. Lista em `fences_2026.json`, originais
+em `backup-fence/`, prévia em `analysis/visual-2026/adboards-2026/preview_fences.png`.
+
+Ainda não visto numa partida: a prévia do editor de estádios não mostra as placas. As placas de LED
+"PES 2013" dos estádios oficiais do jogo não mudam (vêm do atlas de logos do menu).
