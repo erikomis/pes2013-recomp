@@ -22,6 +22,9 @@
 #include "ppu_recomp.h"
 
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 namespace {
 
@@ -64,6 +67,73 @@ uint32_t clubs_in(uint32_t table, Range r)
     return n;
 }
 
+/* A competition's clubs from the profile: $PS3_GAMEDATA_ROOT/pes13_competitions.txt,
+ * lines "<competition> <team id> <team id> ...", '#' to the end of a line is a
+ * comment. Only a list exactly as long as the game's replaces it, in place: the
+ * competition's rounds and draw are laid out for that many clubs. */
+struct CompList { int comp; uint32_t n; uint16_t ids[64]; };
+CompList s_lists[8];
+int s_nlists = -1;
+
+void load_lists()
+{
+    s_nlists = 0;
+    const char* root = getenv("PS3_GAMEDATA_ROOT");
+    if (!root || !*root) return;
+    char path[1024];
+    snprintf(path, sizeof path, "%s/pes13_competitions.txt", root);
+    FILE* f = fopen(path, "r");
+    if (!f) return;
+    char line[2048];
+    while (s_nlists < 8 && fgets(line, sizeof line, f)) {
+        if (char* h = strchr(line, '#')) *h = 0;
+        char* p = line;
+        char* end = nullptr;
+        const long comp = strtol(p, &end, 10);
+        if (end == p) continue;
+        CompList& l = s_lists[s_nlists];
+        l.comp = (int)comp;
+        l.n = 0;
+        p = end;
+        for (;;) {
+            const long id = strtol(p, &end, 10);
+            if (end == p) break;
+            if (id > 0 && id < 0xFFFF && l.n < 64) l.ids[l.n++] = (uint16_t)id;
+            p = end;
+        }
+        if (l.n) s_nlists++;
+    }
+    fclose(f);
+    fprintf(stderr, "[comp] %s: %d competition list(s)\n", path, s_nlists);
+}
+
+/* Write the profile's list for this competition over the game's, once per list. */
+void apply_list(int comp, uint32_t desc)
+{
+    if (s_nlists < 0) load_lists();
+    for (int i = 0; i < s_nlists; i++) {
+        CompList& l = s_lists[i];
+        if (l.comp != comp) continue;
+        const uint32_t n = vm_read32(desc), list = vm_read32(desc + 4);
+        if (!list) return;
+        if (n != l.n) {
+            static uint64_t warned;
+            if (comp < 64 && !(warned & (1ull << comp))) {
+                warned |= 1ull << comp;
+                fprintf(stderr, "[comp] %d: the game has %u clubs, the profile lists %u; not replaced\n",
+                        comp, n, l.n);
+            }
+            return;
+        }
+        bool same = true;
+        for (uint32_t k = 0; k < n && same; k++) same = vm_read16(list + 2 * k) == l.ids[k];
+        if (same) return;
+        for (uint32_t k = 0; k < n; k++) vm_write16(list + 2 * k, l.ids[k]);
+        fprintf(stderr, "[comp] %d: %u clubs from the profile\n", comp, n);
+        return;
+    }
+}
+
 }  // namespace
 
 /* Team count of a league. r3 = team table, r4 = league; count in r3 and r4. */
@@ -98,8 +168,20 @@ void func_00D7D200(ppu_context* ctx)
     const uint32_t out = (uint32_t)ctx->gpr[4];
     const int32_t comp = (int32_t)ctx->gpr[5];
     const uint32_t desc = (uint32_t)(base + ((uint64_t)(int64_t)comp << 3) + 40);
+    apply_list(comp, desc);
     vm_write32(out, vm_read32(desc));
     vm_write32(out + 4, vm_read32(desc + 4));
+    /* PES_COMP_LOG=1: each competition asked for, once: its number, the game's
+     * count and its first team IDs. */
+    { static int on = -1; static uint64_t seen;
+      if (on < 0) on = getenv("PES_COMP_LOG") ? 1 : 0;
+      if (on && comp >= 0 && comp < 64 && !(seen & (1ull << comp))) {
+          seen |= 1ull << comp;
+          const uint32_t n = vm_read32(desc), list = vm_read32(desc + 4);
+          fprintf(stderr, "[comp] %d: %u teams at 0x%08X:", comp, n, list);
+          for (uint32_t i = 0; list && i < n && i < 8; i++) fprintf(stderr, " %u", vm_read16(list + 2 * i));
+          fprintf(stderr, "\n");
+      } }
     if (!vm_read32(out)) return;
     const uint32_t table = vm_read32(base + 336);
     if (!table || !vm_read8(table + 2 * kSlots)) return;
