@@ -2,7 +2,7 @@
 """Put the 2026 Libertadores and Sudamericana foreign clubs into an EEDIT copy.
 
     apply_continental_2026.py SRC DST --plan plan.json --squads squad_references.json
-                              [--competitions pes13_competitions.txt]
+                              [--competitions pes13_competitions.txt] [--mapping out.json]
 
 The game's own continental clubs (team IDs above 16000) take their squads from
 the game's database, not from the EDIT save, so their players cannot be changed.
@@ -82,6 +82,7 @@ def main():
     ap.add_argument("--plan", required=True)
     ap.add_argument("--squads", required=True)
     ap.add_argument("--competitions")
+    ap.add_argument("--mapping")
     a = ap.parse_args()
     if Path(a.src).resolve() == Path(a.dst).resolve():
         sys.exit("DST must be a different file")
@@ -104,6 +105,7 @@ def main():
             uses[m["player_id"]] = uses.get(m["player_id"], 0) + 1
     out = bytearray(data)
     report = []
+    mapping = []
     for c in plan["clubs"]:
         squad = squads.get(c["squad"])
         r = rosters.get(c["slot"])
@@ -124,6 +126,9 @@ def main():
             if 1 <= num <= 99:
                 out[r["offset"] + 132 + member["slot"]] = num
             written += 1
+            mapping.append({"player_id": member["player_id"], "slot": c["slot"], "squad": c["squad"],
+                            "athlete": {k: athlete.get(k) for k in ("name", "display_name", "espn_id",
+                                                                   "birth_date", "position", "shirt_number")}})
         report.append((c["name"], c["slot"], written, len(r["members"]), len(squad["athletes"])))
     struct.pack_into(">I", out, 8, edit.crc32(out))
     data = bytes(out)
@@ -139,6 +144,9 @@ def main():
         for k, v in plan["competitions"].items():
             lines.append(f"{k} " + " ".join(str(t) for t in v))
         Path(a.competitions).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    if a.mapping:
+        Path(a.mapping).write_text(json.dumps(mapping, ensure_ascii=False, indent=1), encoding="utf-8")
 
     for name, slot, written, members, total in report:
         print(f"{slot:5d} {name:28s} {written:2d} players named of {members} records ({total} in the 2026 squad)")

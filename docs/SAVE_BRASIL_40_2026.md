@@ -178,3 +178,35 @@ montado, não uma face real). Não visto: um rosto especial copiado (Thiago Silv
 Ainda falta: os rostos reais de 2026. Não há fonte no formato do PES 2013 para quase nenhum desses
 jogadores. Os pacotes TM Games baixados são do PES 2021 (outro mapeamento de textura). Posições e
 habilidades também continuam as do jogador antigo.
+
+## Posições e habilidades de 2026 (06/11/2026, em andamento)
+
+Os jogadores renomeados ainda tinham a posição e as habilidades do dono antigo do registro (no
+Flamengo, Alex Sandro e Bruno Henrique apareciam como goleiros). Campos do registro, conferidos
+com as páginas do PES 2013 no pesdb.net para os mesmos IDs (Iniesta, C. Ronaldo, Daniel Alves,
+Fàbregas e mais 30) e com jogadores conhecidos:
+
+| Campo | Onde |
+| --- | --- |
+| Posição registrada | byte 121, 4 bits de baixo (0 GO, 1 LIB, 2 ZC, 3 LE, 4 LD, 5 VOL, 6 MLG, 7 ME, 8 MD, 9 MAT, 10 PE, 11 PD, 12 SA, 13 CA) |
+| Habilidades | bytes 122..147, valor = byte >> 1: ataque 122, defesa 123, equilíbrio 124, resistência 125, velocidade 126, reação 128, explosão 129, drible 130/131, passe curto 132/133, passe longo 134/135, chute 136, força do chute 137, bola parada 139, curva 140, cabeceio 141, salto 142, trabalho em equipe 143, controle 144, raça 146, goleiro 147 |
+| Posições que joga | bit 0 de 122 GO, 123 LIB, 124 ZC, 126 VOL, 128 MLG, 130 MAT, 132 SA, 133 CA, 135 LE, 136 LD, 137 ME, 138 MD, 140 PE, 142 PD |
+| Pé bom esquerdo | byte 120, bit 7 |
+| Pé fraco, forma | byte 148 bits 2..4 (uso − 1); byte 149 bits 2..4 (precisão − 1) e 5..7 (forma − 1) |
+| Nacionalidade | bytes 216..217, 9 bits a partir do bit 3 (45 Brasil, 50 Argentina, 49 Uruguai, 48 Paraguai, 47 Chile, 46 Peru, 51 Equador, 44 Colômbia, 104 Bolívia, 105 Venezuela) |
+| Idade | byte 218, bits 3..7 = idade − 15 |
+| Altura | byte 224, bits 1..7 = altura − 148 cm |
+
+- `tools/collect_pesdb_2026.py` procura cada jogador de 2026 nas cartas base do eFootball
+  (pesdb.net). Só aceita a carta quando todos os nomes dela estão no nome completo do jogador, a
+  nacionalidade bate, a idade difere no máximo um ano e a altura até 3 cm (onde há esses dados).
+  Na dúvida, fica sem carta. As páginas ficam em cache (`--offline` repete sem rede). O site
+  limita a velocidade (HTTP 429); a coleta espera e continua.
+- `apply_continental_2026.py --mapping` grava qual jogador de 2026 foi para qual registro.
+- `tools/set_player_stats_2026.py` grava posição, posições que joga, habilidades convertidas
+  da carta, pé, pé fraco, forma, altura, idade e nacionalidade. Sem carta: a posição dos dados
+  de 2026 (goleiro pela súmula da CBF; sem nenhuma informação, um palpite pelo número da camisa)
+  e as habilidades medianas dos jogadores com carta dessa posição na mesma competição, menos 2.
+
+Estado: a ferramenta foi testada numa cópia, com os primeiros clubes coletados. A coleta dos 89
+clubes ainda não terminou e nada disso está no perfil. Não visto no jogo.
