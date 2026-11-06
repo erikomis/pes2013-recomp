@@ -151,3 +151,30 @@ Libertadores, escudos certos em todos os que a captura mostrou, dos 38. Na liga 
 18 com escudo e nome certos; América de Cali e Cuenca a navegação pulou. A lista da liga no save
 tem 18 IDs e 18 nomes diferentes. Os repetidos nas capturas são o cursor parado ou no fim da lista.
 Uniformes dos estrangeiros: nenhum de 2026. Não visto: uma partida com esses elencos.
+
+## Faces: sem rosto de outro jogador (06/11/2026)
+
+Os elencos de 2026 foram escritos em registros de jogadores antigos, e cada registro guardava o
+rosto do dono anterior: Alan Franco com o rosto do Ronaldinho, Ziyech com o do Seedorf. Dos 2.265
+registros renomeados, só 2 eram da mesma pessoa.
+
+No registro do jogador (228 bytes), os bytes 164..191 são o rosto e o cabelo. Copiá-los de outro
+registro troca só o rosto e o cabelo: posição, habilidades e físico ficam (visto em Editar >
+Jogadores > Rosto, sem janela). `tools/fix_faces_2026.py` grava, em cada jogador renomeado:
+
+- o rosto do próprio jogador, quando o Option File original tem essa pessoa: nome completo numa
+  lista conferida à mão (`own_faces.json`) e um só jogador de 2026 com esse nome. São 14: Thiago
+  Silva, Alex Sandro, Felipe Anderson, Marcelo Lomba, Éverton Ribeiro, Willian José, Alan Kardec,
+  Alan Patrick, Tiago Volpi, Marcos Rocha, Nino Paraíba, Anselmo Ramon, Samuel Xavier e Rodrigo
+  Moledo. Nome igual não basta: "J. GARCÍA", "JOÃO VICTOR" e os três "LUIZ GUSTAVO" de 2026 são
+  pessoas diferentes. Outros 21 candidatos ficam listados em `faces_2026.json` para revisão.
+- nos outros 2.251, o rosto de um jogador fictício dos times genéricos do Option File original
+  (843 rostos), diferente para cada jogador do mesmo elenco.
+
+O EDIT anterior ficou em `DATA.BIN.before-faces`. Visto no jogo: Rossi, Pulgar, João Souza e
+Luiz com rostos genéricos, e Alex Sandro com o rosto do registro dele (no Option File é um rosto
+montado, não uma face real). Não visto: um rosto especial copiado (Thiago Silva).
+
+Ainda falta: os rostos reais de 2026. Não há fonte no formato do PES 2013 para quase nenhum desses
+jogadores. Os pacotes TM Games baixados são do PES 2021 (outro mapeamento de textura). Posições e
+habilidades também continuam as do jogador antigo.
