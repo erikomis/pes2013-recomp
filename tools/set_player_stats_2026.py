@@ -3,7 +3,7 @@
 
     set_player_stats_2026.py SRC DST --pesdb pesdb_2026.json --manifest manifest.json
                              --continental continental_mapping.json --squads squads.json
-                             [--squads more.json] [--report report.json]
+                             [--squads more.json] --calibrate ORIGINAL_EEDIT [--report report.json]
 
 SRC is an EEDIT whose squads were renamed to 2026 (create_brazil_test_save.py
 for the 40 Brazilian clubs, whose manifest.json maps record -> CBF athlete;
@@ -26,9 +26,14 @@ pesdb.net's PES 2013 pages for the same player IDs and against known players:
   224 bits 1..7       height - 148 cm
 
 With a pesdb match the abilities come from the eFootball card, converted to PES
-2013's list; without one the player gets his 2026 position (or a guess from his
-shirt number when the data has none) and the median abilities of matched
-players of that position in the same competition, minus two. Every other byte
+2013's list and calibrated: eFootball base cards sit about ten points below PES
+2013's scale, so each ability is moved to the mean and spread (spread ratio held
+to 0.7..1.6) that the Série A players of the stock Option File (--calibrate,
+league 8) have, goalkeepers and outfield players apart; without one the player gets his 2026 position (or a guess from his
+shirt number when the data has none; inside a broad role the shirt number
+picks full back, holding or attacking midfielder, winger) and the median
+abilities of matched players of that position (Série A as is, Série B 4 lower,
+the foreign clubs 1 lower). Every other byte
 stays as it was; the CRC is recomputed and the file decoded again.
 """
 import argparse
@@ -69,6 +74,12 @@ SHIRT_GUESS = {2: "RB", 3: "CB", 4: "CB", 5: "DMF", 6: "LB", 7: "RWF", 8: "CMF",
                10: "AMF", 11: "LWF", 13: "CB", 14: "CB", 15: "DMF", 16: "LB", 17: "RWF",
                18: "CMF", 19: "CF", 20: "AMF", 21: "CF", 22: "RB"}
 BROAD = {"Goalkeeper": "GK", "Defender": "CB", "Midfielder": "CMF", "Forward": "CF"}
+# Brazilian shirt-number habits, used only inside the broad role the 2026 data gives.
+BY_NUMBER = {"Defender": {2: "RB", 13: "RB", 22: "RB", 6: "LB", 16: "LB"},
+             "Midfielder": {5: "DMF", 15: "DMF", 10: "AMF", 20: "AMF", 7: "RMF", 11: "LMF"},
+             "Forward": {7: "RWF", 17: "RWF", 11: "LWF", 19: "SS"}}
+# Template level per competition, from the median of matched players.
+LEVEL = {"A": 0, "B": -4, "CONMEBOL": -1}
 
 
 def key(s):
@@ -119,6 +130,8 @@ def main():
     ap.add_argument("--continental", required=True)
     ap.add_argument("--squads", action="append", default=[],
                     help="squad files with the 2026 data (goalkeeper, position, height, birth date)")
+    ap.add_argument("--calibrate", required=True,
+                    help="the stock EEDIT whose Série A players set PES 2013's ability scale")
     ap.add_argument("--report")
     a = ap.parse_args()
     if Path(a.src).resolve() == Path(a.dst).resolve():
@@ -171,16 +184,54 @@ def main():
                                          ("birth_date", ath.get("birth_date"))) if v})
         todo.append((m["player_id"], "CONMEBOL", r, info))
 
-    # Templates: median converted abilities per (group, position) of matched players.
+    # Calibration: eFootball -> PES 2013 scale, per ability, goalkeepers and outfield apart.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import set_leagues  # noqa: E402
+    od = Path(a.calibrate).read_bytes()
+    odec = edit.decode(od)
+    oplayers = {p["id"]: p for p in odec["players"]}
+    orosters = {r["team_id"]: r for r in odec["rosters"]}
+    ref = {"GK": [], "OUT": []}
+    for tid in set_leagues.read_leagues(od, set_leagues.ORIGINAL)[8]:
+        for mm in orosters[tid]["members"]:
+            o = oplayers[mm["player_id"]]["offset"]
+            ref["GK" if od[o + 121] & 15 == 0 else "OUT"].append({k: od[o + at] >> 1 for k, at in ABILITY.items()})
+    raw = {"GK": [], "OUT": []}
+    for pid, group, r, info in todo:
+        d = (r or {}).get("pesdb")
+        if d and d.get("primary") in POS:
+            raw["GK" if d["primary"] == "GK" else "OUT"].append(convert(d["stats"]))
+    cal = {}
+    for g in ("GK", "OUT"):
+        for k in ABILITY:
+            rv = [x[k] for x in ref[g]]
+            ev = [x[k] for x in raw[g]] or rv
+            rm, em = statistics.mean(rv), statistics.mean(ev)
+            rs, es = statistics.pstdev(rv), statistics.pstdev(ev)
+            ratio = min(1.6, max(0.7, rs / es)) if es > 1 and len(ev) >= 20 else 1.0
+            cal[(g, k)] = (em, rm, ratio)
+
+    def calibrate(ab, gk):
+        g = "GK" if gk else "OUT"
+        out = {}
+        for k, v in ab.items():
+            em, rm, ratio = cal[(g, k)]
+            out[k] = max(40, min(99, round(rm + (v - em) * ratio)))
+        if not gk:
+            out["gk"] = 50
+        return out
+
+    # Templates: median calibrated abilities per (group, position) of matched players.
     pool = collections.defaultdict(list)
     for pid, group, r, info in todo:
         if r and r.get("pesdb") and r["pesdb"].get("primary") in POS:
-            pool[(group, r["pesdb"]["primary"])].append(convert(r["pesdb"]["stats"]))
-            pool[("ALL", r["pesdb"]["primary"])].append(convert(r["pesdb"]["stats"]))
+            c = calibrate(convert(r["pesdb"]["stats"]), r["pesdb"]["primary"] == "GK")
+            pool[(group, r["pesdb"]["primary"])].append(c)
+            pool[("ALL", r["pesdb"]["primary"])].append(c)
 
     def template(group, pos):
         rows_ = pool.get((group, pos)) or pool.get(("ALL", pos)) or pool.get(("ALL", "CMF"))
-        t = {k: max(40, round(statistics.median(x[k] for x in rows_)) - 2) for k in ABILITY}
+        t = {k: max(40, round(statistics.median(x[k] for x in rows_)) + LEVEL.get(group, -2)) for k in ABILITY}
         if pos != "GK":
             t["gk"] = 50
         return t
@@ -200,14 +251,18 @@ def main():
         if d and d.get("primary") in POS:
             pos = d["primary"]
             playable = {pos} | {p for p in d.get("secondary", []) if p in POS}
-            ab = convert(d["stats"])
+            ab = calibrate(convert(d["stats"]), pos == "GK")
             source = "pesdb"
         else:
             broad = (r or {}).get("position") or info.get("position")
             if (r or {}).get("goalkeeper") or info.get("goalkeeper") or broad == "Goalkeeper":
                 pos = "GK"
             elif broad in BROAD:
-                pos = BROAD[broad]
+                try:
+                    num = int(info.get("shirt_number") or 0)
+                except (TypeError, ValueError):
+                    num = 0
+                pos = BY_NUMBER.get(broad, {}).get(num, BROAD[broad])
             else:
                 try:
                     pos = SHIRT_GUESS.get(int(info.get("shirt_number") or 0), "CMF")

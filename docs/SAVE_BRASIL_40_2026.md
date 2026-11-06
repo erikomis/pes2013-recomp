@@ -208,8 +208,20 @@ Fàbregas e mais 30) e com jogadores conhecidos:
   de 2026 (goleiro pela súmula da CBF; sem nenhuma informação, um palpite pelo número da camisa)
   e as habilidades medianas dos jogadores com carta dessa posição na mesma competição, menos 2.
 
-Estado: a ferramenta foi testada numa cópia, com os primeiros clubes coletados. A coleta dos 89
-clubes ainda não terminou e nada disso está no perfil. Não visto no jogo.
+Calibração: as cartas base do eFootball ficam uns 10 a 12 pontos abaixo da escala do PES 2013
+(velocidade média 68 contra 79 na Série A do Option File original). Sem ajuste, o Arthur Cabral
+aparecia com geral 50. Cada habilidade é levada para a média e a dispersão dos jogadores da Série A
+do Option File original (`--calibrate`), goleiros e jogadores de linha separados; com isso ele fica
+com geral 74. Sem carta: no papel geral dos dados de 2026, o número da camisa escolhe lateral (2,
+13, 22 / 6, 16), volante (5, 15), meia de armação (10, 20), meia de lado (7, 11) ou ponta; as
+habilidades são a mediana calibrada da posição (Série A igual, Série B 4 abaixo, estrangeiros 1).
+
+Aplicado em 06/11/2026 (`DATA.BIN.before-stats` é o EDIT anterior; relatório em `stats_2026.json`):
+112 jogadores com carta do eFootball (os 7 primeiros clubes coletados: Athletico, Atlético-MG,
+Bahia, Botafogo, Chapecoense, Corinthians, Coritiba) e 2.153 pelo modelo de posição. Visto no
+jogo, sem janela, em Editar > Jogadores > Botafogo: posições (Alex Telles LE, Vitinho LD, Ziyech
+PTD, Matheus Martins PTE...), habilidades, nacionalidade, idade, altura e geral. A coleta continua;
+reaplicar com o `pesdb_2026.json` novo troca o modelo pelos dados reais clube a clube.
 
 ## Estádios (06/11/2026)
 
