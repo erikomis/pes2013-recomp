@@ -273,3 +273,13 @@ pode completar. Uma execução de teste não aplicou a troca e a causa não foi 
 seguintes aplicaram.
 
 Para jogar: `PS3_MODS=faces-2026,brasil-2026-escudos,brasil-2026-uniformes,libertadores-2026-escudos`.
+
+## Gramado HD (06/11/2026)
+
+O gramado é uma textura de 2048x1024 com o campo inteiro (listras e linhas pintadas), uma por
+tipo de estádio (`5edd10acc9e2206d` e `a850e5fc2ea11e06` nas partidas vistas). `tools/make_hd_pitch.py`
+gera a versão 4096x2048: o mesmo campo ampliado, com um grão fino de grama só na grama (as linhas
+ficam limpas). Pacote `gramado-hd`. Visto numa partida de demonstração sem janela, com
+`PS3_RES_SCALE=2` (2560x1440): a troca foi aplicada e o campo fica nítido. Outros estádios podem
+usar outra textura de gramado; essas ainda não foram capturadas. Não é uma grama nova, e sim a do
+jogo com mais detalhe.
