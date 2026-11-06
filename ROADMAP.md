@@ -29,12 +29,19 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 
 - [ ] The one-frame spike (112-207 ms) when a replay starts or the scene
   changes, which is where the remaining audio gaps are. Not shader compiles
-  (3 new shaders in a whole match). To profile next.
+  (3 new shaders in a whole match). Profiled on 2026-11-06 (`PES_SPIKE_MS`,
+  `PS3_FTRACE`): in the windows where audio falls behind, the spike is the title itself busy
+  (130-535 ms without asking for a frame) and its audio mixer starved of CPU; not textures,
+  shaders or pipelines. Two fixes ready, off until a measurement on an idle machine:
+  `PS3_PPU_BOOST_BELOW=700` (higher priority for the title's audio threads) and
+  `AUDIO_ELASTIC=12` (64 ms of queue instead of 43). The A/B run with other games open could
+  not decide.
 - [ ] Confirm in a window, with the final build, on a quiet machine: 60 fps in
   play and clean sound. Other heavy processes on the Mac take it to 15-20 fps.
 - [ ] One headless test run ended at about 490 s with no crash report and no
   exit status recorded; the next run went past 590 s. Exit status is now
-  recorded by the test scripts. Watch for it in long sessions.
+  recorded by the test scripts. On 2026-11-06, 9 headless matches (one of 15 min, the
+  others 7-10 min) ended without a crash, only by the requested stop.
 
 ### Game modes
 
