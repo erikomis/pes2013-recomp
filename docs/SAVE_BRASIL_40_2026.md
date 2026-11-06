@@ -316,3 +316,14 @@ texturas), `brasil-2026-uniformes` e `brasil-2026-escudos`. **Não aplicados nes
 `faces-2026` (as chaves foram capturadas em Editar > Jogadores; na partida o rosto usa outra
 textura, a investigar) e `gramado-hd` (Wembley usa outro gramado). Uniforme de goleiro continua o
 antigo (o pacote só tem as camisas 1 e 2 de linha).
+
+### Gramado de Wembley e rostos na partida (06/11/2026)
+
+- `gramado-hd` ganhou o gramado de Wembley (`b1c4e318d799d320`), o estádio padrão dos amistosos.
+  Visto numa partida Flamengo x Santos em 2560x1440: aplicado.
+- Rostos na partida: a textura do rosto (256x512 DXT1) é montada pelo jogo a partir do rosto e de
+  outros dados do jogador, fora da GPU, e a chave muda: nenhuma chave da tela Editar aparece na
+  partida. A chave é estável para o mesmo jogador (o Santos repetiu as mesmas 8 em duas partidas)
+  e as do mandante vêm antes. Trocar o rosto de dois jogadores muda as duas chaves (não as troca de
+  lugar), então a ordem de carga não basta para saber de quem é cada uma. Caminho possível:
+  alterar o rosto de grupos de titulares em algumas partidas e ver quais chaves mudam. Não feito.
