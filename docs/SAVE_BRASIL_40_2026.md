@@ -126,3 +126,28 @@ Visto no jogo, sem janela: o seletor da Libertadores mostra os 38 clubes de 2026
 certos (Cusco não apareceu na captura). Não visto: sorteio, fase de grupos, uma partida da copa.
 
 Para jogar: os três pacotes juntos, `PS3_MODS=libertadores-2026-escudos,brasil-2026-escudos,brasil-2026-uniformes`.
+
+## Elencos de 2026 nos estrangeiros e Sul-Americana (05/11/2026, noite)
+
+Os clubes continentais do jogo (IDs acima de 16000) pegam o elenco do banco de dados do jogo, não
+do EDIT. Por isso cada estrangeiro foi para um slot que tem elenco no EDIT: o próprio (Barcelona,
+Del Valle, LDU, Cerro, Santa Fe, Tolima, U. Católica, River, Tigre), uma vaga de clube de 2013 que
+estava na Libertadores ou um slot genérico (2483–2501, 2514). `tools/apply_continental_2026.py`
+com `continental_2026_plan.json` grava em cada um o nome nas 20 línguas, a sigla e o elenco de
+2026 (nome, nome na camisa e número; goleiro, 4 defensores, 4 meias e 2 atacantes como titulares).
+Jogador que outro elenco também usa (seleção) fica como estava. Atributos, posições e rostos são do
+jogador antigo. O EDIT anterior ficou em `DATA.BIN.before-continental`.
+
+- Libertadores (competição 27): os 38 clubes apontam para esses slots.
+- Liga Sul-Americana (liga 6, amistosos e liga): os 18 clubes da Sul-Americana 2026 que não estão
+  na Libertadores: River, Tigre, Racing, San Lorenzo, Olimpia, Millonarios, América de Cali,
+  Palestino, O'Higgins, Audax Italiano, Caracas, Juventud, Cienciano, Blooming, Macará, Cuenca,
+  Boston River e Barracas Central. O jogo só tem 18 vagas nessa liga.
+- Escudos: `libertadores-2026-escudos` agora tem os 25 da Libertadores que estavam com escudo de
+  outro clube e os 16 da Sul-Americana (Wikipédia/Wikimedia, 256x256).
+
+Visto no jogo, sem janela: elenco de 2026 no Boca, na LDU e no Liverpool. No seletor da
+Libertadores, escudos certos em todos os que a captura mostrou, dos 38. Na liga do amistoso, 16 de
+18 com escudo e nome certos; América de Cali e Cuenca a navegação pulou. A lista da liga no save
+tem 18 IDs e 18 nomes diferentes. Os repetidos nas capturas são o cursor parado ou no fim da lista.
+Uniformes dos estrangeiros: nenhum de 2026. Não visto: uma partida com esses elencos.
