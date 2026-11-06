@@ -427,7 +427,7 @@ index 89ca663e..23ff8a3a 100644
          printf("[cellSpurs] _LFQueuePushBody q=0x%08X: %u bytes -> slot %u (h5 %u -> %u), woke %d\n",
                 q, size, slot, push_h5, next_h5, woke);
 diff --git a/libs/system/cellSaveData.c b/libs/system/cellSaveData.c
-index 4fed2533..10996afc 100644
+index 4fed2533..97d52a56 100644
 --- a/libs/system/cellSaveData.c
 +++ b/libs/system/cellSaveData.c
 @@ -531,50 +531,50 @@ static u32 savedata_content_type(const char* name)
@@ -568,7 +568,46 @@ index 4fed2533..10996afc 100644
          return failed ? CELL_SAVEDATA_ERROR_ACCESS_ERROR : (s32)wrote;
      }
  
-@@ -1149,7 +1156,7 @@ static s32 savedata_fixed(int is_save, CellSaveDataSetList* setList,
+@@ -842,11 +849,38 @@ static void read_param_sfo(const char* save_path, CellSaveDataSystemFileParam* p
+ }
+ 
+ /* Core save/load implementation shared by List/Fixed/Auto variants */
++static s32 savedata_execute_body(const char* dirName, int is_save,
++                                  CellSaveDataSetBuf* setBuf,
++                                  CellSaveDataStatCallback funcStat,
++                                  CellSaveDataFileCallback funcFile,
++                                  void* userdata);
++
++/* Saves in progress, for a host that is about to end the process (the port's
++ * quit path waits for 0 so a closed window does not leave a half-written
++ * DATA.BIN / PARAM.SFO behind). */
++static volatile int s_savedata_busy;
++int cellSaveData_busy(void)
++{
++    return __atomic_load_n(&s_savedata_busy, __ATOMIC_ACQUIRE);
++}
++
+ static s32 savedata_execute(const char* dirName, int is_save,
+                              CellSaveDataSetBuf* setBuf,
+                              CellSaveDataStatCallback funcStat,
+                              CellSaveDataFileCallback funcFile,
+                              void* userdata)
++{
++    __atomic_add_fetch(&s_savedata_busy, 1, __ATOMIC_ACQ_REL);
++    const s32 r = savedata_execute_body(dirName, is_save, setBuf, funcStat, funcFile, userdata);
++    __atomic_sub_fetch(&s_savedata_busy, 1, __ATOMIC_ACQ_REL);
++    return r;
++}
++
++static s32 savedata_execute_body(const char* dirName, int is_save,
++                                  CellSaveDataSetBuf* setBuf,
++                                  CellSaveDataStatCallback funcStat,
++                                  CellSaveDataFileCallback funcFile,
++                                  void* userdata)
+ {
+     if (!dirName || !funcStat)
+         return CELL_SAVEDATA_ERROR_PARAM;
+@@ -1149,7 +1183,7 @@ static s32 savedata_fixed(int is_save, CellSaveDataSetList* setList,
      scratch_reset();
      u32 cb = scratch_alloc(SAVEDATA_CBRESULT_SIZE);
      u32 get = scratch_alloc(0x4C); /* dirNum, dirListNum, dirList, reserved[64] */
@@ -577,7 +616,7 @@ index 4fed2533..10996afc 100644
      u32 list = listed ? scratch_alloc(listed * 48) : 0;
      if (!cb || !get || !set || (listed && !list)) {
          free(dirs); return CELL_SAVEDATA_ERROR_INTERNAL;
-@@ -1158,8 +1165,19 @@ static s32 savedata_fixed(int is_save, CellSaveDataSetList* setList,
+@@ -1158,8 +1192,19 @@ static s32 savedata_fixed(int is_save, CellSaveDataSetList* setList,
      vm_write32(get, count); vm_write32(get + 4, listed); vm_write32(get + 8, list);
      if (listed) memcpy(vm_base + list, dirs, listed * 48);
      free(dirs);
