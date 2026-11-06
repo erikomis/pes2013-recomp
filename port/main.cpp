@@ -220,11 +220,50 @@ static void pace_note(unsigned long long t0, unsigned long long t1)
     n = 0; worst_present = 0; window_start = t1;
 }
 
+/* PES_SPIKE_MS=<ms>: for every presented frame whose interval exceeds <ms>,
+ * one line splitting that interval: time inside the FIFO drain (and its longest
+ * single call), inside present, inside the window pump, and the rest, which is
+ * this thread sleeping because the guest had not moved `put` or asked for a flip
+ * yet (a CPU-side stall in the title). With wall-clock time, so a stall can be
+ * lined up with the [fs] / [audio] lines around it. */
+static unsigned long long s_spk_drain, s_spk_drain_max, s_spk_present, s_spk_pump, s_spk_calls;
+static long s_spike_ms = -1;
+static void drain_fifo(void)
+{
+    const unsigned long long t0 = mono_us();
+    cellGcm_rsx_process_fifo();
+    const unsigned long long d = mono_us() - t0;
+    s_spk_drain += d;
+    s_spk_calls++;
+    if (d > s_spk_drain_max) s_spk_drain_max = d;
+}
+static void spike_note(unsigned long long t0, unsigned long long t1)
+{
+    static unsigned long long last;
+    if (s_spike_ms < 0) { const char* e = getenv("PES_SPIKE_MS"); s_spike_ms = e ? atol(e) : 0; }
+    if (s_spike_ms > 0 && last) {
+        const unsigned long long iv = t1 - last;
+        if (iv > (unsigned long long)s_spike_ms * 1000ull) {
+            const unsigned long long present = s_spk_present + (t1 - t0);
+            const unsigned long long busy = s_spk_drain + present + s_spk_pump;
+            time_t now = time(nullptr);
+            struct tm tmv; localtime_r(&now, &tmv);
+            fprintf(stderr, "[spike] %02d:%02d:%02d frame %.1f ms = drain %.1f (%llu calls, max %.1f) + present %.1f + pump %.1f + waiting for the guest %.1f\n",
+                    tmv.tm_hour, tmv.tm_min, tmv.tm_sec, iv / 1000.0, s_spk_drain / 1000.0, s_spk_calls,
+                    s_spk_drain_max / 1000.0, present / 1000.0, s_spk_pump / 1000.0,
+                    (iv > busy ? iv - busy : 0) / 1000.0);
+        }
+    }
+    last = t1;
+    s_spk_drain = s_spk_drain_max = s_spk_present = s_spk_pump = s_spk_calls = 0;
+}
+
 static void present_guest_frame(void)
 {
     const unsigned long long t0 = mono_us();
     rsx_backend_present();
     pace_note(t0, mono_us());
+    spike_note(t0, mono_us());
     /* This thread increments and guest threads read, so interlocked rather
      * than a volatile ++, which on arm64 is neither atomic nor a fence. */
     InterlockedIncrement(&g_frames_presented);
@@ -436,7 +475,7 @@ static DWORD WINAPI frame_clock(LPVOID)
             /* Drain the FIFO every tick. This is what writes the RSX sync-fence
              * labels the game's per-frame logic blocks on, so it has to keep
              * advancing at 60 Hz even while present() throttles. */
-            if (rsx_ok) cellGcm_rsx_process_fifo();
+            if (rsx_ok) drain_fifo();
             next_tick += vblank_us;
             fired++;
         }
@@ -449,14 +488,17 @@ static DWORD WINAPI frame_clock(LPVOID)
         if (rsx_ok) {
             if (cellGcm_take_flip_pending())
                 present_guest_frame();
-            cellGcm_rsx_process_fifo();
+            drain_fifo();
 
             /* Window events at most every 4 ms: a windowed pump is a dispatch_sync to
              * the main thread, and this loop runs far more often than that. */
             const int pump_due = now - last_pump >= 4000;
             if (pump_due) {
                 last_pump = now;
-                if (rsx_backend_pump() != 0) {
+                const unsigned long long tp = mono_us();
+                const int pumped = rsx_backend_pump();
+                s_spk_pump += mono_us() - tp;
+                if (pumped != 0) {
                     rsx_ok = 0;              /* window closed */
                     quit_request_window_closed();
                     continue;
@@ -466,8 +508,11 @@ static DWORD WINAPI frame_clock(LPVOID)
              * at the pump's cadence, so the window is not blank during boot. */
             if (cellGcm_take_flip_pending())
                 present_guest_frame();
-            else if (pump_due && cellGcm_flip_request_count() == 0)
+            else if (pump_due && cellGcm_flip_request_count() == 0) {
+                const unsigned long long tp = mono_us();
                 rsx_backend_present();
+                s_spk_present += mono_us() - tp;
+            }
         }
     }
     return 0;

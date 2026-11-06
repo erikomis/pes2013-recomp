@@ -29,12 +29,19 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 
 - [ ] O pico de um quadro (112-207 ms) quando começa um replay ou troca a cena,
   que é onde estão os buracos de áudio que sobraram. Não é compilação de shader
-  (3 shaders novos numa partida inteira). Próximo a perfilar.
+  (3 shaders novos numa partida inteira). Perfilado em 2026-11-06 (`PES_SPIKE_MS`,
+  `PS3_FTRACE`): nas janelas em que o áudio atrasa, o pico é o próprio jogo ocupado
+  (130-535 ms sem pedir quadro) e o mixer de áudio dele sem CPU; não é textura, shader nem
+  pipeline. Duas saídas prontas, desligadas até uma medição com a máquina livre:
+  `PS3_PPU_BOOST_BELOW=700` (prioridade maior para as threads de áudio do jogo) e
+  `AUDIO_ELASTIC=12` (64 ms de fila em vez de 43). O A/B feito com outros jogos abertos não
+  serviu para decidir.
 - [ ] Confirmar em janela, com a build final e a máquina livre: 60 fps na partida
   e som limpo. Outros processos pesados no Mac derrubam para 15-20 fps.
 - [ ] Uma execução de teste sem janela terminou por volta de 490 s sem relatório
   de crash e sem código de saída gravado; a seguinte passou de 590 s. Os scripts
-  de teste agora gravam o código de saída. Observar em sessões longas.
+  de teste agora gravam o código de saída. Em 2026-11-06, 9 partidas sem janela (uma de
+  15 min, as outras de 7-10 min) terminaram sem queda; só pelo encerramento pedido.
 
 ### Modos de jogo
 
