@@ -247,3 +247,29 @@ partida num deles; se os times usam um estádio de casa, o campo do registro nã
 
 Outra tabela, de 20 nomes de 0x60 bytes em 0x37B448 (Frasqueirão, Independência...), não aparece
 nessa lista. O que ela faz não se sabe; não foi alterada.
+
+## Rostos de 2026 (06/11/2026)
+
+A textura de rosto do PS3 (256x512, DXT1) tem o mesmo layout das faces do PES 2013 de PC
+(1024x1024 ou 2048x2048), só que com metade da largura. Ela pode ser trocada por um pacote de
+texturas (`PS3_MODS`), em resolução maior: 512x1024, ou 1024x2048 quando a fonte tem 2048.
+
+- Rosto montado não serve de base: jogadores com rostos montados diferentes usam a mesma
+  textura. `tools/assign_unique_faces.py` dá a cada jogador com face baixada um rosto especial
+  livre (de um jogador de 2013 que saiu do save), com textura própria. A cabeça e o cabelo são
+  desse rosto antigo; a textura do rosto vem do pacote.
+- `tools/map_face_files.py` liga cada arquivo de face ao jogador de 2026 pelo nome (116 de 170).
+- A chave de cada textura é capturada em Editar > Jogadores, linha a linha, com
+  `PS3_MODS_DUMP`. Uma chave vista na linha de mais de um jogador é descartada (textura que
+  termina de carregar depois que o cursor andou). Duas passadas pelos 20 clubes da Série A.
+- `tools/build_face_pack.py` monta o pacote `faces-2026` com 63 rostos de 14 clubes (Flamengo
+  13, Bahia 8, Cruzeiro 8, Athletico 5, Corinthians 5, Mirassol 4, Santos 4, Atlético-MG 3,
+  Coritiba 3, Fluminense 3, Palmeiras 3, Botafogo 2, Chapecoense 1, Remo 1).
+
+Visto no jogo, sem janela: Pulgar (tatuagens no pescoço e braços) e Arrascaeta (fonte 2048) com
+o rosto de 2026, junto com o pacote de uniformes. Os outros 53 ficaram sem chave: o modelo 3D da
+linha não carregou a tempo, ou a chave apareceu em mais de uma linha. Uma passada mais lenta
+pode completar. Uma execução de teste não aplicou a troca e a causa não foi achada; as três
+seguintes aplicaram.
+
+Para jogar: `PS3_MODS=faces-2026,brasil-2026-escudos,brasil-2026-uniformes,libertadores-2026-escudos`.
