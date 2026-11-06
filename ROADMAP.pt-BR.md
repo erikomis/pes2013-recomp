@@ -66,7 +66,9 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 ### Gráficos e resolução
 
 - [x] Resolução interna 1080p / 1440p / 4K (`PS3_RES_SCALE`), na build; o fps de cada degrau ainda não foi medido
-- [ ] Pacotes HD: uniformes, escudos, rostos e gramado na resolução das fontes (a imagem do pacote pode ser maior que a textura que substitui)
+- [x] Gramado HD: os dois gramados vistos nas partidas em 4096x2048 com grão de grama (`gramado-hd`, visto em 2560x1440).
+- [x] Rostos HD: rostos de 2026 em 512x1024 ou 1024x2048 (`faces-2026`, 63 jogadores).
+- [ ] HD dos gramados dos outros estádios, da bola, da torcida e das placas.
 - [x] Modos de janela, tamanho, monitor, vsync (2026-11-05, na build; ainda não vistos em janela).
 - [x] Filtros de imagem: vibração, contraste, vinheta, granulação, LUT de cor e presets (com testes).
 - [x] Upscaling espacial MetalFX (com teste; ainda não visto em janela).
@@ -99,7 +101,7 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 - [x] Posições, posições que joga, habilidades, pé, pé fraco, forma, altura, idade e
   nacionalidade gravados nos 2.265 jogadores renomeados (2026-11-06; visto em Editar >
   Jogadores). Habilidades calibradas para a escala do PES 2013.
-- [ ] Desses, só 112 já têm a carta do eFootball 2026 (7 clubes); os outros usam um
+- [ ] Desses, 349 já têm a carta do eFootball 2026 (toda a Série A e alguns estrangeiros); os outros usam um
   modelo por posição até a coleta no pesdb.net terminar (o site limita a velocidade).
 - [x] Rostos reais de 2026 como pacote de texturas: 63 jogadores de 14 clubes, com 2 a 4
   vezes a resolução do PS3 (vistos: Pulgar, Arrascaeta).

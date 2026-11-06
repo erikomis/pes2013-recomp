@@ -53,7 +53,8 @@ correções do toolkit feitas para os portes de inFAMOUS, Resistance e Deadpool.
 | Resolução interna 1080p / 1440p / 4K (`PS3_RES_SCALE`) | 🧪 na build desde 2026-11-05; o fps de cada degrau ainda não foi medido. Ultrawide: ⏳ precisa de um patch de projeção |
 | O app (launcher): jogar, gráficos, controles, perfis de Option File, saves | 🧪 compilado; ainda não testado abrindo o jogo |
 | Perfil temporada 2026: Séries A e B com 20 clubes cada, clubes da Libertadores e da Sul-Americana, nomes, elencos, uniformes, escudos | 🧪 visto sem janela nos menus e seletores; ainda sem uma partida com ele |
-| Posições e habilidades de 2026 | ✅ gravadas em todo jogador renomeado; 🧪 112 das cartas do eFootball 2026, os outros por um modelo de posição por enquanto |
+| Posições e habilidades de 2026 | ✅ gravadas em todo jogador renomeado; 🧪 349 das cartas do eFootball 2026, os outros por um modelo de posição por enquanto |
+| Gramado HD (4096x2048) | 🧪 os dois gramados vistos nas partidas, num pacote de texturas (`gramado-hd`) |
 | Rostos reais de 2026 | 🧪 63 jogadores num pacote de texturas (Pulgar e Arrascaeta vistos); falta capturar mais |
 | Fechar a janela encerra o jogo | ✅ desde 2026-11-06 (antes continuava rodando sem janela) |
 | Master League, Rumo ao Estrelato, salvar uma carreira | ❓ não testado |

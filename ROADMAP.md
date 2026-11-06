@@ -66,7 +66,9 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 ### Graphics and resolution
 
 - [x] Internal resolution 1080p / 1440p / 4K (`PS3_RES_SCALE`), in the build; frame rate per step not measured yet
-- [ ] HD packs: kits, crests, faces and pitch at the sources' resolution (a pack image may be larger than the texture it replaces)
+- [x] HD pitch: the game's two pitches seen in matches at 4096x2048 with grass grain (`gramado-hd`, seen at 2560x1440).
+- [x] HD faces: 2026 faces at 512x1024 or 1024x2048 (`faces-2026`, 63 players).
+- [ ] HD for the pitches of the other stadiums, the ball, the crowd and ad boards.
 - [x] Window modes, window size, screen, vsync (2026-11-05, in the build; not yet seen in a window).
 - [x] Picture filters: vibrance, contrast, vignette, grain, colour LUT and presets (unit-tested).
 - [x] MetalFX spatial upscaling (unit-tested; not yet seen in a window).
@@ -98,7 +100,7 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 - [x] Positions, playable positions, abilities, foot, weak foot, form, height,
   age, nationality written for all 2,265 renamed players (2026-11-06; seen in
   Edit > Players). Abilities calibrated to PES 2013's scale.
-- [ ] Of those, only 112 have their eFootball 2026 card yet (7 clubs); the rest
+- [ ] Of those, 349 have their eFootball 2026 card so far (all of Série A, some foreign clubs); the rest
   use a position template until pesdb.net's rate limit lets the collection finish.
 - [x] Real 2026 faces as a texture pack: 63 players of 14 clubs, at 2-4x the
   PS3 resolution (seen: Pulgar, Arrascaeta).
