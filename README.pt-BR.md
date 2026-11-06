@@ -53,7 +53,9 @@ correções do toolkit feitas para os portes de inFAMOUS, Resistance e Deadpool.
 | Resolução interna 1080p / 1440p / 4K (`PS3_RES_SCALE`) | 🧪 na build desde 2026-11-05; o fps de cada degrau ainda não foi medido. Ultrawide: ⏳ precisa de um patch de projeção |
 | O app (launcher): jogar, gráficos, controles, perfis de Option File, saves | 🧪 compilado; ainda não testado abrindo o jogo |
 | Perfil temporada 2026: Séries A e B com 20 clubes cada, clubes da Libertadores e da Sul-Americana, nomes, elencos, uniformes, escudos | 🧪 visto sem janela nos menus e seletores; ainda sem uma partida com ele |
-| Posições e habilidades de 2026, rostos reais de 2026 | ⏳ em andamento (ver abaixo) |
+| Posições e habilidades de 2026 | ✅ gravadas em todo jogador renomeado; 🧪 112 das cartas do eFootball 2026, os outros por um modelo de posição por enquanto |
+| Rostos reais de 2026 | 🧪 63 jogadores num pacote de texturas (Pulgar e Arrascaeta vistos); falta capturar mais |
+| Fechar a janela encerra o jogo | ✅ desde 2026-11-06 (antes continuava rodando sem janela) |
 | Master League, Rumo ao Estrelato, salvar uma carreira | ❓ não testado |
 | Online, troféus | ❓ só offline, não testado |
 | Linux e Windows | ⏳ ainda sem plano |
@@ -129,14 +131,18 @@ comunidade):
 - Uniformes 1 e 2 de 2026 dos 40 clubes e escudos dos clubes que faltavam ou
   estavam na vaga de outro, como pacotes de texturas.
 - Nenhum jogador usa mais o rosto de outro: 14 voltaram a ter o próprio rosto,
-  os outros um rosto fictício. Posições, habilidades, pé, altura, idade e
-  nacionalidade das cartas de 2026 do eFootball (pesdb.net) estão sendo coletadas.
+  os outros um rosto fictício; outros 63 usam o rosto real de 2026, de pacotes de
+  faces do PES 2013 de PC, como pacote de texturas (`faces-2026`).
+- Posições, habilidades, pé, altura, idade e nacionalidade gravadas em todo jogador
+  renomeado, calibradas para a escala do PES 2013: das cartas de 2026 do eFootball
+  (pesdb.net) onde já coletadas, um modelo por posição no resto.
+- Os 20 estádios do criador de estádios têm nomes de 2026 (só os nomes).
 
 Texturas em HD: a imagem de um pacote pode ser maior que a textura que ela
 substitui (o pacote de escudos é 256x256 sobre 128x128). Então uniformes,
 escudos, rostos e gramado podem entrar em resolução maior, vinda das fontes. Os
-rostos dos pacotes do PES 2013 de PC (1024x1024, mesmo layout de textura) são o
-próximo teste.
+rostos dos pacotes do PES 2013 de PC (mesmo layout, 1024 ou 2048) entram em 512x1024
+ou 1024x2048, de duas a quatro vezes os 256x512 do PS3.
 
 ## O app
 

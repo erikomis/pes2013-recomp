@@ -53,7 +53,9 @@ toolkit fixes made for the inFAMOUS, Resistance and Deadpool ports. See
 | Internal resolution 1080p / 1440p / 4K (`PS3_RES_SCALE`) | 🧪 in the build since 2026-11-05; frame rate at each step not measured yet. Ultrawide: ⏳ needs a projection patch |
 | The app (launcher): play, graphics, controls, Option File profiles, saves | 🧪 built; not yet tested launching the game |
 | Season 2026 profile: Série A and B with 20 clubs each, Libertadores and Sudamericana clubs, names, squads, kits, crests | 🧪 seen headless in menus and pickers; a match with it not played yet |
-| 2026 positions and abilities, real 2026 faces | ⏳ in progress (see below) |
+| 2026 positions and abilities | ✅ written for every renamed player; 🧪 112 from eFootball 2026 cards, the rest from a position template for now |
+| Real 2026 faces | 🧪 63 players as a texture pack (Pulgar and Arrascaeta seen); more to capture |
+| Closing the window ends the game | ✅ since 2026-11-06 (it used to keep running with no window) |
 | Master League, Become a Legend, saving a career | ❓ not tested |
 | Online, trophies | ❓ offline only, not tested |
 | Linux and Windows | ⏳ not planned yet |
@@ -127,13 +129,18 @@ Wikipedia/Wikimedia crests, community kit and face packs):
 - 2026 home and away kits for the 40 clubs and crests for the clubs that were
   missing or sat in another club's slot, as texture packs.
 - No player wears another player's face any more: 14 players got their own face
-  back, the rest a fictional one. Positions, abilities, foot, height, age and
-  nationality from eFootball's 2026 cards (pesdb.net) are being collected.
+  back, the rest a fictional one; 63 more wear their real 2026 face from PES 2013
+  PC face packs, as a texture pack (`faces-2026`).
+- Positions, abilities, foot, height, age and nationality written for every
+  renamed player, calibrated to PES 2013's scale: from eFootball's 2026 cards
+  (pesdb.net) where collected, a position template elsewhere.
+- The stadium creator's 20 stadiums carry 2026 names (only the names).
 
 HD textures: a texture pack image may be larger than the texture it replaces
 (the crest pack is 256x256 over 128x128), so kits, crests, faces and pitch
 textures can go in at higher resolution from their sources. Faces from PES 2013
-PC packs (1024x1024, same texture layout) are the next test.
+PC packs (same texture layout, 1024 or 2048) go in at 512x1024 or 1024x2048, two
+to four times the PS3's 256x512.
 
 ## The app
 

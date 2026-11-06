@@ -43,6 +43,10 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 - [ ] Modos online: devem falhar sem travar offline. Não testado.
 - [ ] Troféus (devem ser ignorados offline). Não testado.
 
+### Janela
+
+- [x] Saída limpa: fechar a janela, Cmd-Q ou SIGTERM encerram o processo (depois de um save em andamento); antes ele continuava rodando sem janela (2026-11-06, SIGTERM testado sem janela; o botão de fechar ainda não visto).
+
 ### Controles
 
 - [x] Teclado (Enter = START, Espaço = CROSS) e DualSense pelo SDL.
@@ -92,11 +96,20 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
   Sul-Americana) com elencos de 2026; escudos da Wikimedia.
 - [x] Uniformes 1 e 2 de 2026 dos 40 clubes, como pacote de texturas (vistos no seletor de times).
 - [x] Nenhum jogador com o rosto de outro (14 rostos próprios, os outros fictícios).
-- [ ] Posições, habilidades, pé, altura, idade e nacionalidade das cartas do
-  eFootball 2026: campos do registro decifrados, ferramenta pronta, coleta rodando.
-- [ ] Rostos reais de 2026: 170 faces do PES 2013 de PC baixadas; mostrar uma face
-  de PC no PS3 ainda não está provado.
+- [x] Posições, posições que joga, habilidades, pé, pé fraco, forma, altura, idade e
+  nacionalidade gravados nos 2.265 jogadores renomeados (2026-11-06; visto em Editar >
+  Jogadores). Habilidades calibradas para a escala do PES 2013.
+- [ ] Desses, só 112 já têm a carta do eFootball 2026 (7 clubes); os outros usam um
+  modelo por posição até a coleta no pesdb.net terminar (o site limita a velocidade).
+- [x] Rostos reais de 2026 como pacote de texturas: 63 jogadores de 14 clubes, com 2 a 4
+  vezes a resolução do PS3 (vistos: Pulgar, Arrascaeta).
+- [ ] As outras 53 faces ligadas a jogador (sem chave capturada ainda) e os 54 arquivos
+  sem jogador de 2026 com esse nome.
+- [x] Os 20 estádios do criador de estádios com nomes de 2026 (todo clube da Série A tem
+  o nome do seu estádio); só os nomes, a aparência fica.
 - [ ] Uniformes dos clubes estrangeiros: nenhuma fonte de 2026 encontrada.
+- [ ] Estádios 3D novos (Bombonera, Allianz Parque...): exigiriam converter o modelo
+  inteiro; o jogo só tem Maracanã, Morumbi, Vila Belmiro e o Monumental.
 - [ ] Uma partida, a Master League e uma Libertadores jogadas com o perfil.
 - [ ] Copa do Brasil: o jogo não tem essa competição e o Option File não tem vagas
   para os 126 clubes; só uma copa personalizada com os clubes que existem.

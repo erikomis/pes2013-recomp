@@ -43,6 +43,10 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 - [ ] Online modes: they should fail cleanly offline. Not tested.
 - [ ] Trophies (should be a no-op offline). Not tested.
 
+### Window
+
+- [x] Clean exit: closing the window, Cmd-Q or SIGTERM ends the process (after a save in progress); it used to keep running with no window (2026-11-06, SIGTERM tested headless; the close button not yet seen).
+
 ### Controls
 
 - [x] Keyboard (Enter = START, Space = CROSS) and DualSense through SDL.
@@ -91,11 +95,21 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
   Sudamericana clubs) with 2026 squads; crests from Wikimedia.
 - [x] 2026 kits 1 and 2 for the 40 clubs, as a texture pack (seen in the team picker).
 - [x] No player wears another player's face (14 own faces, the rest fictional).
-- [ ] Positions, abilities, foot, height, age, nationality from eFootball 2026
-  cards: record fields decoded, tool written, collection running.
-- [ ] Real 2026 faces: 170 PES 2013 PC faces downloaded; showing a PC face on
-  PS3 is not proven yet.
+- [x] Positions, playable positions, abilities, foot, weak foot, form, height,
+  age, nationality written for all 2,265 renamed players (2026-11-06; seen in
+  Edit > Players). Abilities calibrated to PES 2013's scale.
+- [ ] Of those, only 112 have their eFootball 2026 card yet (7 clubs); the rest
+  use a position template until pesdb.net's rate limit lets the collection finish.
+- [x] Real 2026 faces as a texture pack: 63 players of 14 clubs, at 2-4x the
+  PS3 resolution (seen: Pulgar, Arrascaeta).
+- [ ] The other 53 matched faces (no key captured yet) and the 54 face files
+  with no 2026 player of that name.
+- [x] The stadium creator's 20 stadiums renamed for 2026 (every Série A club
+  has its stadium's name); only names, the looks stay.
 - [ ] Kits for the foreign clubs: no 2026 source found.
+- [ ] New 3D stadiums (Bombonera, Allianz Parque...): would need converting a
+  whole stadium model; the game has only Maracanã, Morumbi, Vila Belmiro and
+  the Monumental.
 - [ ] A match, Master League and a Libertadores played through with the profile.
 - [ ] Copa do Brasil: the game has no such competition and the Option File has
   no slots for its 126 clubs; only a custom cup with the clubs that exist.
