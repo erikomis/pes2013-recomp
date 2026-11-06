@@ -50,9 +50,10 @@ correções do toolkit feitas para os portes de inFAMOUS, Resistance e Deadpool.
 | Som (48 kHz, mixer do jogo) | ✅; 🧪 um quadro de 0,1-0,2 s no início do replay ainda perde alguns blocos de áudio |
 | Modos de janela (janela, sem borda, tela cheia), tamanho, monitor, vsync, MetalFX | 🧪 na build desde 2026-11-05, ainda não vistos em janela |
 | Filtros de imagem (vibração, contraste, vinheta, granulação, LUT de cor) e pacotes de texturas | 🧪 na build desde 2026-11-05: testes de unidade e execuções sem janela (um pacote de teste trocou texturas da tela de título) |
-| Resolução interna 1080p / 1440p / 4K, ultrawide | ⏳ ainda não trazida: mexe no tamanho de todos os alvos de desenho |
+| Resolução interna 1080p / 1440p / 4K (`PS3_RES_SCALE`) | 🧪 na build desde 2026-11-05; o fps de cada degrau ainda não foi medido. Ultrawide: ⏳ precisa de um patch de projeção |
 | O app (launcher): jogar, gráficos, controles, perfis de Option File, saves | 🧪 compilado; ainda não testado abrindo o jogo |
-| Elencos e uniformes Brasil 2026 | 🧪 ferramentas e dados coletados; um save de teste do Flamengo carrega na tela de escalação |
+| Perfil temporada 2026: Séries A e B com 20 clubes cada, clubes da Libertadores e da Sul-Americana, nomes, elencos, uniformes, escudos | 🧪 visto sem janela nos menus e seletores; ainda sem uma partida com ele |
+| Posições e habilidades de 2026, rostos reais de 2026 | ⏳ em andamento (ver abaixo) |
 | Master League, Rumo ao Estrelato, salvar uma carreira | ❓ não testado |
 | Online, troféus | ❓ só offline, não testado |
 | Linux e Windows | ⏳ ainda sem plano |
@@ -112,6 +113,30 @@ jogo em `rpcs3/` e abre o jogo. Passe ajustes como `VAR=valor` depois dele.
 
 Teclado: Enter é START, Espaço é CROSS. DualSense, DualShock 4 ou controle de Xbox
 funcionam pelo SDL.
+
+## Perfil temporada 2026
+
+Um perfil de teste (uma cópia; os saves do dono não são tocados), montado com os
+scripts `tools/*_2026.py` a partir de fontes públicas (súmulas da CBF, elencos
+da ESPN, escudos da Wikipédia/Wikimedia, pacotes de uniformes e faces da
+comunidade):
+
+- Séries A e B de 2026 com 20 clubes cada (o Option File original tem 18 vagas
+  na Série B; `port/pes_leagues.cpp` lê o layout de 20).
+- Nomes dos clubes em todos os idiomas do jogo; elencos de 2026 (nomes, nomes na
+  camisa, números) dos 40 clubes brasileiros e de 49 clubes da Libertadores e da
+  Sul-Americana; a lista da Libertadores e a liga sul-americana trocadas.
+- Uniformes 1 e 2 de 2026 dos 40 clubes e escudos dos clubes que faltavam ou
+  estavam na vaga de outro, como pacotes de texturas.
+- Nenhum jogador usa mais o rosto de outro: 14 voltaram a ter o próprio rosto,
+  os outros um rosto fictício. Posições, habilidades, pé, altura, idade e
+  nacionalidade das cartas de 2026 do eFootball (pesdb.net) estão sendo coletadas.
+
+Texturas em HD: a imagem de um pacote pode ser maior que a textura que ela
+substitui (o pacote de escudos é 256x256 sobre 128x128). Então uniformes,
+escudos, rostos e gramado podem entrar em resolução maior, vinda das fontes. Os
+rostos dos pacotes do PES 2013 de PC (1024x1024, mesmo layout de textura) são o
+próximo teste.
 
 ## O app
 

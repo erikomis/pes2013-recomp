@@ -61,13 +61,12 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 
 ### Graphics and resolution
 
-- [ ] Internal resolution 1080p / 1440p / 4K (`PS3_RES_SCALE`), being ported
-  from the inFAMOUS 2 toolkit. Each step needs its own 60 fps measurement.
+- [x] Internal resolution 1080p / 1440p / 4K (`PS3_RES_SCALE`), in the build; frame rate per step not measured yet
+- [ ] HD packs: kits, crests, faces and pitch at the sources' resolution (a pack image may be larger than the texture it replaces)
 - [x] Window modes, window size, screen, vsync (2026-11-05, in the build; not yet seen in a window).
 - [x] Picture filters: vibrance, contrast, vignette, grain, colour LUT and presets (unit-tested).
 - [x] MetalFX spatial upscaling (unit-tested; not yet seen in a window).
 - [x] Texture packs (`PS3_MODS`) and the texture dump (a test pack replaced title-screen textures headless).
-- [ ] HD packs for this game: none made yet.
 - [ ] Ultrawide aspect (wider view, HUD kept 16:9): needs a projection patch for this game.
 - [x] Anisotropic filtering 16x by default, FXAA, sharpening.
 
@@ -86,9 +85,20 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 
 - [x] Read the Option File's rosters (players, teams, CRC) and write a test save.
 - [x] Collect the 40 Série A/B clubs and the 2026 cup participants with sources.
-- [ ] Review identities, apply full rosters, and validate in game.
-- [ ] Convert 2026 kits and faces to the PS3 save formats (only uniform overlays
-  are mapped so far).
+- [x] Série A and B with 20 clubs each, names in every language, 2026 squads
+  for the 40 clubs (2026-11-05, seen headless).
+- [x] Libertadores 2026 (38 clubs) and the South American league (18
+  Sudamericana clubs) with 2026 squads; crests from Wikimedia.
+- [x] 2026 kits 1 and 2 for the 40 clubs, as a texture pack (seen in the team picker).
+- [x] No player wears another player's face (14 own faces, the rest fictional).
+- [ ] Positions, abilities, foot, height, age, nationality from eFootball 2026
+  cards: record fields decoded, tool written, collection running.
+- [ ] Real 2026 faces: 170 PES 2013 PC faces downloaded; showing a PC face on
+  PS3 is not proven yet.
+- [ ] Kits for the foreign clubs: no 2026 source found.
+- [ ] A match, Master League and a Libertadores played through with the profile.
+- [ ] Copa do Brasil: the game has no such competition and the Option File has
+  no slots for its 126 clubs; only a custom cup with the clubs that exist.
 - [ ] Brazilian Portuguese commentary: inventoried, not replaced.
 
 ### App to install and play (launcher)

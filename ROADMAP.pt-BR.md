@@ -61,13 +61,12 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 
 ### Gráficos e resolução
 
-- [ ] Resolução interna 1080p / 1440p / 4K (`PS3_RES_SCALE`), sendo trazida do
-  toolkit do inFAMOUS 2. Cada degrau precisa da própria medição de 60 fps.
+- [x] Resolução interna 1080p / 1440p / 4K (`PS3_RES_SCALE`), na build; o fps de cada degrau ainda não foi medido
+- [ ] Pacotes HD: uniformes, escudos, rostos e gramado na resolução das fontes (a imagem do pacote pode ser maior que a textura que substitui)
 - [x] Modos de janela, tamanho, monitor, vsync (2026-11-05, na build; ainda não vistos em janela).
 - [x] Filtros de imagem: vibração, contraste, vinheta, granulação, LUT de cor e presets (com testes).
 - [x] Upscaling espacial MetalFX (com teste; ainda não visto em janela).
 - [x] Pacotes de texturas (`PS3_MODS`) e exportação das texturas (um pacote de teste trocou texturas da tela de título sem janela).
-- [ ] Pacotes HD para este jogo: nenhum feito ainda.
 - [ ] Ultrawide (visão mais larga, HUD em 16:9 no centro): precisa de um patch de projeção para este jogo.
 - [x] Filtro anisotrópico 16x por padrão, FXAA, nitidez.
 
@@ -87,9 +86,20 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 - [x] Ler os elencos do Option File (jogadores, times, CRC) e gravar um save de teste.
 - [x] Levantar os 40 clubes das Séries A e B e os participantes das copas de 2026,
   com fontes.
-- [ ] Revisar identidades, aplicar os elencos completos e validar no jogo.
-- [ ] Converter uniformes e rostos de 2026 para os formatos de save do PS3 (por
-  enquanto só os overlays de uniforme estão mapeados).
+- [x] Séries A e B com 20 clubes cada, nomes em todos os idiomas, elencos de 2026
+  dos 40 clubes (2026-11-05, visto sem janela).
+- [x] Libertadores 2026 (38 clubes) e a liga sul-americana (18 clubes da
+  Sul-Americana) com elencos de 2026; escudos da Wikimedia.
+- [x] Uniformes 1 e 2 de 2026 dos 40 clubes, como pacote de texturas (vistos no seletor de times).
+- [x] Nenhum jogador com o rosto de outro (14 rostos próprios, os outros fictícios).
+- [ ] Posições, habilidades, pé, altura, idade e nacionalidade das cartas do
+  eFootball 2026: campos do registro decifrados, ferramenta pronta, coleta rodando.
+- [ ] Rostos reais de 2026: 170 faces do PES 2013 de PC baixadas; mostrar uma face
+  de PC no PS3 ainda não está provado.
+- [ ] Uniformes dos clubes estrangeiros: nenhuma fonte de 2026 encontrada.
+- [ ] Uma partida, a Master League e uma Libertadores jogadas com o perfil.
+- [ ] Copa do Brasil: o jogo não tem essa competição e o Option File não tem vagas
+  para os 126 clubes; só uma copa personalizada com os clubes que existem.
 - [ ] Narração em português do Brasil: inventariada, não substituída.
 
 ### App para instalar e jogar (launcher)

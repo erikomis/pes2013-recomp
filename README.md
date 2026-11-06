@@ -50,9 +50,10 @@ toolkit fixes made for the inFAMOUS, Resistance and Deadpool ports. See
 | Sound (48 kHz, game mixer) | ✅; 🧪 one frame of 0.1-0.2 s at the start of a replay still drops a few audio blocks |
 | Window modes (windowed, borderless, fullscreen), window size, screen, vsync, MetalFX | 🧪 in the build since 2026-11-05, not yet seen in a window |
 | Image filters (vibrance, contrast, vignette, grain, colour LUT) and texture packs | 🧪 in the build since 2026-11-05: unit tests and headless runs (a test pack replaced title-screen textures) |
-| Internal resolution 1080p / 1440p / 4K, ultrawide | ⏳ not ported yet: it resizes every render target |
+| Internal resolution 1080p / 1440p / 4K (`PS3_RES_SCALE`) | 🧪 in the build since 2026-11-05; frame rate at each step not measured yet. Ultrawide: ⏳ needs a projection patch |
 | The app (launcher): play, graphics, controls, Option File profiles, saves | 🧪 built; not yet tested launching the game |
-| Brazil 2026 rosters and kits | 🧪 tools and data collected; a Flamengo test save loads in the line-up screen |
+| Season 2026 profile: Série A and B with 20 clubs each, Libertadores and Sudamericana clubs, names, squads, kits, crests | 🧪 seen headless in menus and pickers; a match with it not played yet |
+| 2026 positions and abilities, real 2026 faces | ⏳ in progress (see below) |
 | Master League, Become a Legend, saving a career | ❓ not tested |
 | Online, trophies | ❓ offline only, not tested |
 | Linux and Windows | ⏳ not planned yet |
@@ -111,6 +112,28 @@ tools/run.sh > cache/boot-meu.log 2>&1
 
 Keyboard: Enter is START, Space is CROSS. A DualSense, DualShock 4 or Xbox
 controller works through SDL.
+
+## Season 2026 profile
+
+A test profile (a copy; the owner's saves are not touched) built with the
+`tools/*_2026.py` scripts from public sources (CBF match sheets, ESPN rosters,
+Wikipedia/Wikimedia crests, community kit and face packs):
+
+- Série A and B 2026 with 20 clubs each (the stock Option File has 18 Série B
+  slots; `port/pes_leagues.cpp` reads a 20-club layout).
+- Club names in every game language; 2026 squads (names, shirt names, numbers)
+  for the 40 Brazilian clubs and 49 Libertadores and Sudamericana clubs; the
+  Libertadores list and the South American league replaced in place.
+- 2026 home and away kits for the 40 clubs and crests for the clubs that were
+  missing or sat in another club's slot, as texture packs.
+- No player wears another player's face any more: 14 players got their own face
+  back, the rest a fictional one. Positions, abilities, foot, height, age and
+  nationality from eFootball's 2026 cards (pesdb.net) are being collected.
+
+HD textures: a texture pack image may be larger than the texture it replaces
+(the crest pack is 256x256 over 128x128), so kits, crests, faces and pitch
+textures can go in at higher resolution from their sources. Faces from PES 2013
+PC packs (1024x1024, same texture layout) are the next test.
 
 ## The app
 
