@@ -132,6 +132,7 @@ def main():
                     help="squad files with the 2026 data (goalkeeper, position, height, birth date)")
     ap.add_argument("--calibrate", required=True,
                     help="the stock EEDIT whose Série A players set PES 2013's ability scale")
+    ap.add_argument("--positions", help="manual positions: {\"players\": {cbf_id: {\"position\": \"CMF\"}}}")
     ap.add_argument("--report")
     a = ap.parse_args()
     if Path(a.src).resolve() == Path(a.dst).resolve():
@@ -165,6 +166,8 @@ def main():
                 if ath.get("espn_id"):
                     base[("espn", ath["espn_id"])] = info
 
+    override = (json.loads(Path(a.positions).read_text(encoding="utf-8"))["players"]
+                if a.positions else {})
     todo = []  # (player id, group, pesdb row or None, info)
     man = json.loads(Path(a.manifest).read_text(encoding="utf-8"))
     for ch in man["changes"]:
@@ -172,6 +175,7 @@ def main():
         for asg in ch["assignments"]:
             r = rows.get(("cbf", asg["cbf_id"]))
             info = dict(base.get(("cbf", asg["cbf_id"]), {}))
+            info["cbf_id"] = asg["cbf_id"]
             info["shirt_number"] = asg.get("shirt_number")
             todo.append((asg["pes_id"], group, r, info))
     for m in json.loads(Path(a.continental).read_text(encoding="utf-8")):
@@ -255,7 +259,10 @@ def main():
             source = "pesdb"
         else:
             broad = (r or {}).get("position") or info.get("position")
-            if (r or {}).get("goalkeeper") or info.get("goalkeeper") or broad == "Goalkeeper":
+            manual = override.get(info.get("cbf_id"), {}).get("position")
+            if manual in POS:
+                pos = manual
+            elif (r or {}).get("goalkeeper") or info.get("goalkeeper") or broad == "Goalkeeper":
                 pos = "GK"
             elif broad in BROAD:
                 try:

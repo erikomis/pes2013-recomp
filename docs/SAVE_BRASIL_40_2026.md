@@ -327,3 +327,23 @@ antigo (o pacote só tem as camisas 1 e 2 de linha).
   e as do mandante vêm antes. Trocar o rosto de dois jogadores muda as duas chaves (não as troca de
   lugar), então a ordem de carga não basta para saber de quem é cada uma. Caminho possível:
   alterar o rosto de grupos de titulares em algumas partidas e ver quais chaves mudam. Não feito.
+
+## Escalações titulares (07/11/2026)
+
+O elenco (lista de jogadores) e a escalação são tabelas separadas. A escalação fica em 379
+registros de 2756 bytes a partir de 0x400444: o número do time (u16 em -1448) e 32 bytes com as
+posições da lista na ordem da escalação (0 a 10 os titulares nas posições da formação, depois o
+banco). Ao trocar os jogadores da lista, a escalação continuou apontando para as mesmas posições, e
+entravam em campo jogadores errados e fora de posição (no Flamengo, Luiz e Josmar no lugar de Léo
+Ortiz e Samuel Lino, sem Alex Sandro, Jorginho e Carrascal).
+
+`tools/fix_lineups_2026.py` refaz a escalação dos 87 times com elenco de 2026 (dois sem registro de
+escalação ficaram de fora): cada posição da formação recebe o melhor jogador livre do mesmo setor
+(defesa, meio, ataque) com posição parecida; os brasileiros ordenados por jogos como titular nas
+súmulas recentes da CBF, os estrangeiros pelas habilidades; banco em seguida. O papel de cada
+posição vem do jogador que o Option File original tinha ali (a formação não mudou).
+`positions_override.json`: posição manual de 21 titulares conhecidos da Série A que as súmulas e a
+ESPN deixam sem posição (Jorginho, Emerson Royal, Ganso, Tiquinho, Cebolinha...); os da Série B sem
+posição ficam no palpite pelo número da camisa. Visto no jogo: Flamengo x Santos com os titulares
+de 2026 nas posições certas. 30 de 957 titulares ficaram fora do setor, em times sem jogadores
+suficientes naquele setor. O EDIT anterior ficou em `DATA.BIN.before-lineups`.

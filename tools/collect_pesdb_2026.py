@@ -83,8 +83,11 @@ class Fetcher:
                 print(f"  error {exc} for {path}", file=sys.stderr)
                 return None
         if body is None:
-            self.errors += 1
-            return None
+            # still rate-limited after the retries: wait it out, do not count it as
+            # a network error (pesdb's limit lasts a while, then lifts)
+            print("  still 429, waiting 900 s", file=sys.stderr, flush=True)
+            time.sleep(900)
+            return self.get(path)
         self.errors = 0
         self.requests += 1
         f.write_text(body, encoding="utf-8")
