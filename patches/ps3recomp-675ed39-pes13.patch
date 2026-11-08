@@ -57,7 +57,7 @@ index bfa9c6db..0bc434d3 100644
  
  #if defined(_MSC_VER)
 diff --git a/libs/audio/cellAudio.c b/libs/audio/cellAudio.c
-index a44d398a..3a48b14c 100644
+index a44d398a..3a5d8b6f 100644
 --- a/libs/audio/cellAudio.c
 +++ b/libs/audio/cellAudio.c
 @@ -182,7 +182,21 @@ static int audio_backend_init(void)
@@ -159,7 +159,23 @@ index a44d398a..3a48b14c 100644
  }
  
  static void audio_backend_wait(void) { SDL_Delay(1); }
-@@ -600,8 +651,15 @@ static int audio_late_block(void)
+@@ -574,6 +625,15 @@ static unsigned long long audio_diag_ms(void)
+ #endif
+ }
+ 
++#ifndef _WIN32
++static unsigned long long audio_diag_ns(void)
++{
++    struct timespec ts;
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    return (unsigned long long)ts.tv_sec * 1000000000ull + (unsigned long long)ts.tv_nsec;
++}
++#endif
++
+ #if AUDIO_BACKEND_SDL2
+ /* A title's mixer that finishes its tick a few milliseconds late finds the read
+  * index past its block, and FMOD then loses most of a ring. While the device still
+@@ -600,8 +660,15 @@ static int audio_late_block(void)
  }
  #endif
  
@@ -175,7 +191,7 @@ index a44d398a..3a48b14c 100644
          /* AUDIO_PEAK=1: report the mixed block's peak amplitude periodically so
           * "is any port producing sound" is answerable (LBP Bink movie audio). */
          { static int _ap = -1; if (_ap < 0) _ap = getenv("AUDIO_PEAK") ? 1 : 0;
-@@ -626,6 +684,9 @@ static void audio_diag_after_submit(void)
+@@ -626,6 +693,9 @@ static void audio_diag_after_submit(void)
              { int nz = 0; for (u32 i = 0; i < CELL_AUDIO_BLOCK_SAMPLES * 2; i++) if (s_mix_buffer[i] != 0.0f) { nz = 1; break; }
                if (!nz) z++; }
              if (now - t0 >= 5000) {
@@ -185,6 +201,62 @@ index a44d398a..3a48b14c 100644
                  fprintf(stderr, "[audio-rate] %.1f blocks/s (real time 187.5), silent %.1f%%, dropped %.0f frames/s, device buf %u%c",
                          n * 1000.0 / (now - t0), n ? 100.0 * z / n : 0.0, (g_audio_dropped - d0) * 1000.0 / (now - t0),
                  #if AUDIO_BACKEND_WASAPI
+@@ -692,19 +762,47 @@ static void* audio_mix_thread_func(void* arg)
+      * 5.33 ms, whenever the device has room. Fixed sleeps ran at whatever rate
+      * they happened to, so the title's mixer was woken unevenly and the queue
+      * either ran dry or grew without bound. With no device, pace on the clock. */
+-    unsigned long long t0 = audio_diag_ms(), blocks = 0;
++    /* The device can free its queue several blocks at a time, and pacing on room
++     * alone then mixed blocks back to back and woke the title's mixer several
++     * times at once. So every block is also due on the clock, 5.33 ms apart, as
++     * on the console, and the device queue is only the margin.
++     * PS3_AUDIO_ROOM_PACE=1 gives back pacing on room alone. */
++    static int room_pace = -1;
++    if (room_pace < 0) { const char* e = getenv("PS3_AUDIO_ROOM_PACE"); room_pace = e && atoi(e) ? 1 : 0; }
++    const unsigned long long period_ns = CELL_AUDIO_BLOCK_SAMPLES * 1000000000ull / CELL_AUDIO_SAMPLE_RATE;
++    unsigned long long t0 = audio_diag_ns(), blocks = 0;
+     while (s_mix_thread_running) {
+         const int room = audio_backend_room();
+-        if (room >= 0 && room < CELL_AUDIO_BLOCK_SAMPLES) { audio_backend_wait(); continue; }
++        if (room >= 0 && room < CELL_AUDIO_BLOCK_SAMPLES) {
++            audio_backend_wait();
++            /* the device is behind the clock: move the schedule, no burst after */
++            if (!room_pace) {
++                const unsigned long long now = audio_diag_ns();
++                if (now > t0 + blocks * period_ns) t0 = now - blocks * period_ns;
++            }
++            continue;
++        }
+ #if AUDIO_BACKEND_SDL2
+         if (audio_late_block()) { usleep(500); continue; }
+ #endif
+-        if (room < 0) {
+-            const unsigned long long now = audio_diag_ms();
+-            const unsigned long long due = t0 + blocks * CELL_AUDIO_BLOCK_SAMPLES * 1000ull / CELL_AUDIO_SAMPLE_RATE;
+-            if (now < due) { usleep(1000); continue; }
+-            /* More than 50 ms behind: drop the backlog rather than mix a burst. */
+-            if (now - due > 50) t0 = now - blocks * CELL_AUDIO_BLOCK_SAMPLES * 1000ull / CELL_AUDIO_SAMPLE_RATE;
++        if (room < 0 || !room_pace) {
++            const unsigned long long now = audio_diag_ns();
++            const unsigned long long due = t0 + blocks * period_ns;
++            if (now < due) {
++                const unsigned long long w = (due - now) / 1000ull;
++                usleep(w > 1000 ? 1000 : w ? (useconds_t)w : 1);
++                continue;
++            }
++            /* More than two blocks behind: drop the backlog rather than mix a burst. */
++            if (now - due > 2 * period_ns) t0 = now - blocks * period_ns;
++#if AUDIO_BACKEND_SDL2
++            /* Keep the device queue nearly full, as pacing on room did: while it
++             * holds less than the margin less one block, blocks go a quarter of a
++             * period early (4 ms apart instead of 5.3), never back to back. */
++            if (room >= 0 && audio_backend_queued_samples() <
++                    CELL_AUDIO_BLOCK_SAMPLES * ((audio_elastic() ? (u32)audio_elastic_blocks() : 4u) - 1u))
++                t0 -= period_ns / 4;
++#endif
+         }
+         blocks++;
+         audio_mix_one_block();
 diff --git a/libs/misc/cellOskDialog.c b/libs/misc/cellOskDialog.c
 index 17e7c674..be79549c 100644
 --- a/libs/misc/cellOskDialog.c
