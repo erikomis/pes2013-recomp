@@ -347,3 +347,39 @@ ESPN deixam sem posição (Jorginho, Emerson Royal, Ganso, Tiquinho, Cebolinha..
 posição ficam no palpite pelo número da camisa. Visto no jogo: Flamengo x Santos com os titulares
 de 2026 nas posições certas. 30 de 957 titulares ficaram fora do setor, em times sem jogadores
 suficientes naquele setor. O EDIT anterior ficou em `DATA.BIN.before-lineups`.
+
+## Nomes conhecidos e rostos na partida (07/11/2026)
+
+**Nomes.** O apelido de registro da CBF às vezes é só o primeiro nome: "JORGE" é o Jorginho, "LUIZ"
+é o Luiz Araújo, "DYOGO" é o Dyogo Alves. `tools/fix_names_2026.py` grava o nome conhecido:
+- de `names_override.json` (19 conferidos à mão: Jorginho, Emerson Royal, Gabriel Paulista, Arthur
+  Cabral, Carlos Vinícius, André Silva, Andrés Gómez e Hinestroza no Vasco, Taliari...);
+- do ESPN, quando o apelido de uma palavra é a primeira palavra do nome de duas palavras do ESPN
+  (84: Luiz Araújo, Johnny Góes, Wendel Passos...). Apelido que é sobrenome (Plata, Arrascaeta) fica;
+- quando dois jogadores do mesmo clube têm o mesmo nome, o ESPN ou nome + último sobrenome (14:
+  Gilberto Moraes/Gilberto Santos no Athletico, Rai Pessanha/Rai Ramos...).
+O nome na camisa segue o Option File original: sem acento ("LEO ORTIZ"). 475 jogadores mudaram (117
+nomes, o resto só o acento da camisa). EDIT anterior: `DATA.BIN.before-names`. Visto em Editar >
+Jogadores nos 20 clubes da Série A: nomes e posições certos.
+
+**O pacote de rostos estava errado.** As chaves de `faces-2026` vinham de uma captura antiga: nenhum
+rosto do Flamengo era aplicado em Editar, e as chaves de Jacy, Lavega e Tiago Coser (Coritiba) eram
+hoje as texturas de Varela, Alex Sandro e Samuel Lino. Recapturado com o perfil atual
+(`analysis/visual-2026/nav/capture_faces.py`): cada textura vai para a linha em cujo intervalo de
+quadros ela carregou (a gravação de texturas anota o quadro), não pela ordem de chegada. O pacote
+refeito tem 93 rostos de 17 clubes (eram 63). Visto em Editar: os 17 do Flamengo com rosto 2026 no
+jogador certo (Rossi de barba, Pulgar com a tatuagem no pescoço, Léo Ortiz de bigode).
+
+**Rostos na partida.** Na carga da partida o jogo monta de novo a textura de cada titular, e quase
+sempre ela sai um pouco diferente da do Editar (alguns níveis de cor), com outra chave. A ordem de
+carga não basta, mas a imagem sim: `tools/add_match_faces.py` compara cada rosto gravado numa partida
+com todos os rostos do Editar (área do rosto, brilho normalizado) e aceita o par quando a diferença é
+pequena (até 150) e no máximo 1/2,5 da do segundo rosto mais parecido. Assim a mesma foto 2026 entra
+também com a chave da partida (`<chave>_<nome>-match.png`). Em 9 amistosos automáticos (todos os 17
+clubes): 278 rostos vistos, 220 pareados, 41 dos 93 jogadores do pacote jogaram de titular e agora têm
+a chave da partida. Visto num Flamengo x Santos: os 10 titulares do Flamengo com rosto 2026, Diógenes
+e Gabriel Bontempo carregaram o rosto do pacote.
+
+Falta: os outros 52 do pacote (reservas nessas escalações) só ganham a chave da partida quando
+aparecem numa partida gravada; um reserva que entra no jogo ainda usa o rosto antigo. Os clubes sem
+rosto baixado continuam com rostos genéricos.
