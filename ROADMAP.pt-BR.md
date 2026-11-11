@@ -36,9 +36,13 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
   `PS3_PPU_BOOST_BELOW=700` (prioridade maior para as threads de áudio do jogo) e
   `AUDIO_ELASTIC=12` (64 ms de fila em vez de 43). O A/B feito com outros jogos abertos não
   serviu para decidir.
+- [x] Estalos na narração e na torcida durante a partida (08/11/2026): o mixer mandava blocos
+  em rajadas conforme o CoreAudio liberava espaço, e com a partida pesando o jogo os escrevia
+  fora de ordem. Agora cada bloco sai pelo relógio, a cada 5,33 ms. Gravação da mesma partida:
+  centenas de saltos nas emendas a cada 10 s antes, 4 em 6 minutos depois.
 - [ ] Confirmar em janela, com a build final e a máquina livre: 60 fps na partida
   e som limpo. Outros processos pesados no Mac derrubam para 15-20 fps.
-- [ ] Uma execução de teste sem janela terminou por volta de 490 s sem relatório
+- [x] Uma execução de teste sem janela terminou por volta de 490 s sem relatório
   de crash e sem código de saída gravado; a seguinte passou de 590 s. Os scripts
   de teste agora gravam o código de saída. Em 2026-11-06, 9 partidas sem janela (uma de
   15 min, as outras de 7-10 min) terminaram sem queda; só pelo encerramento pedido.

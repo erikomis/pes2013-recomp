@@ -36,9 +36,13 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
   `PS3_PPU_BOOST_BELOW=700` (higher priority for the title's audio threads) and
   `AUDIO_ELASTIC=12` (64 ms of queue instead of 43). The A/B run with other games open could
   not decide.
+- [x] Clicks in the match commentary and crowd (2026-11-08): the mixer sent blocks in bursts
+  as CoreAudio freed room, and under match load the title wrote them out of order. Blocks
+  now go out on the clock, 5.33 ms apart. Recorded mix of the same match: hundreds of seam
+  jumps per 10 s before, 4 in 6 minutes after.
 - [ ] Confirm in a window, with the final build, on a quiet machine: 60 fps in
   play and clean sound. Other heavy processes on the Mac take it to 15-20 fps.
-- [ ] One headless test run ended at about 490 s with no crash report and no
+- [x] One headless test run ended at about 490 s with no crash report and no
   exit status recorded; the next run went past 590 s. Exit status is now
   recorded by the test scripts. On 2026-11-06, 9 headless matches (one of 15 min, the
   others 7-10 min) ended without a crash, only by the requested stop.
