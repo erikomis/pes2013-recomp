@@ -17,6 +17,8 @@ match texture takes the Edit face whose difference is at most --max-d and at
 most 1/--ratio of the next best one; when that Edit key is in the pack, the
 pack's image is copied under the match key ("<match key>_<name>-match.png").
 A match key paired with two different Edit faces over the runs is dropped.
+Pairs from earlier runs (pack.json "match_faces") are kept, so runs can be
+added one at a time.
 pack.json gets a "match_faces" list with the distances.
 """
 import argparse
@@ -82,8 +84,9 @@ def main():
                 if len(r["textures"]) == 1 and r["row"] < len(rosters.get(c["team"], [])):
                     owner.setdefault(r["textures"][0][0], set()).add(rosters[c["team"]][r["row"]])
     ref = {k: sample(Path(a.edit_dump) / f"{k}.png") for k in set(faces_in(a.edit_dump))}
-    found = {}       # match key -> set of edit keys
-    rows = []
+    # pairs from earlier runs stay, unless a new run pairs that match key elsewhere
+    found = {m["match_key"]: {m["edit_key"]} for m in meta.get("match_faces", [])}
+    rows = list(meta.get("match_pairing", []))
     for spec in a.match:
         dump, _, first = spec.partition(":")
         for k in faces_in(dump, int(first or 0)):
@@ -99,8 +102,6 @@ def main():
                          "accepted": ok, "in_pack": k0 in by_edit, "dump": dump})
             if ok:
                 found.setdefault(k, set()).add(k0)
-    for f in list(pack.glob("*-match.png")):
-        f.unlink()
     added = []
     for k, eks in sorted(found.items()):
         if len(eks) != 1:
@@ -113,6 +114,10 @@ def main():
         shutil.copyfile(pack / src["file"], out)
         added.append({"match_key": k, "edit_key": ek, "player_id": src["player_id"], "name": src["name"],
                       "file": out.name})
+    keep = {a["file"] for a in added}
+    for f in pack.glob("*-match.png"):
+        if f.name not in keep:
+            f.unlink()
     meta["match_faces"] = added
     meta["match_pairing"] = rows
     (pack / "pack.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
