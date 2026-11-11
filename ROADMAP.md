@@ -119,11 +119,12 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
   1,288 have no card on eFootball (mostly Série B) and use a position template.
 - [x] Real 2026 faces as a texture pack: 93 players of 17 clubs, at 2-4x the PS3
   resolution. All 93 in Edit (keys recaptured on 2026-11-07 and checked on screen for
-  Flamengo); 83 in matches, keyed from 9 automatic friendlies with the bench players starting
+  Flamengo); 87 in matches, keyed from 11 automatic friendlies with the bench players starting
   (2026-11-11). Some faces come out with different bytes from run to run; the pack carries
   each variant seen (alias keys).
-- [ ] The last 10 faces in matches (4 Athletico, 2 Grêmio, 2 Palmeiras, 1 Botafogo,
-  1 Corinthians), and the 23 matched face files with no key and 54 with no 2026 player.
+- [ ] The last 6 faces in matches (Marçal, Allan, Matheus Nascimento, Krovinovic: their match
+  texture pairs with no Edit face; Felipe Anderson and Khellven: Palmeiras has no line-up record,
+  so they cannot be made to start), and the 23 matched face files with no key and 54 with no 2026 player.
 - [x] The stadium creator's 20 stadiums renamed for 2026 (every Série A club
   has its stadium's name); only names, the looks stay.
 - [ ] Kits for the foreign clubs: no 2026 source found.

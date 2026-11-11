@@ -16,7 +16,8 @@ face area, brightness-normalised, 32x64 samples, mean squared difference). A
 match texture takes the Edit face whose difference is at most --max-d and at
 most 1/--ratio of the next best one; when that Edit key is in the pack, the
 pack's image is copied under the match key ("<match key>_<name>-match.png").
-A match key paired with two different Edit faces over the runs is dropped.
+A match key paired with the Edit faces of two different players over the runs is
+dropped (a face and its alias keys are one player).
 Pairs from earlier runs (pack.json "match_faces") are kept, so runs can be
 added one at a time.
 pack.json gets a "match_faces" list with the distances.
@@ -92,6 +93,9 @@ def main():
     # pairs from earlier runs stay, unless a new run pairs that match key elsewhere
     found = {m["match_key"]: {m["edit_key"]} for m in meta.get("match_faces", [])}
     rows = list(meta.get("match_pairing", []))
+    for r in rows:                     # every pairing kept from earlier runs counts again
+        if r.get("accepted"):
+            found.setdefault(r["match"], set()).add(r["edit"])
     for spec in a.match:
         dump, _, first = spec.partition(":")
         for k in faces_in(dump, int(first or 0)):
@@ -109,10 +113,12 @@ def main():
                 found.setdefault(k, set()).add(k0)
     added = []
     for k, eks in sorted(found.items()):
-        if len(eks) != 1:
+        # several Edit keys are fine when they are one player's (a face and its aliases)
+        owners = {by_edit[e]["player_id"] if e in by_edit else e for e in eks}
+        if len(owners) != 1 or k in eks:
             continue
-        ek = next(iter(eks))
-        if ek not in by_edit or k == ek:
+        ek = next((e for e in sorted(eks) if e in by_edit), None)
+        if ek is None:
             continue
         src = by_edit[ek]
         out = pack / f"{k}_{Path(src['file']).stem.split('_', 1)[1]}-match.png"
