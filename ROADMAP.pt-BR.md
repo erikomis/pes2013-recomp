@@ -47,8 +47,12 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 
 - [ ] Master League e Rumo ao Estrelato: criar, salvar, carregar, continuar.
 - [ ] Salvar e carregar um Option File editado dentro do jogo.
-- [ ] Modos online: devem falhar sem travar offline. Não testado.
-- [ ] Troféus (devem ser ignorados offline). Não testado.
+- [x] Modos online falham sem travar, sem internet (sem janela, 11/11/2026): Comunidade Online >
+  Minhas comunidades volta ao menu sem mensagem e sem travar. O diálogo de rede responde
+  "conectado" e o jogo depois vê a PSN offline; responder "sem conexão" deixaria o jogo mostrar a
+  mensagem dele.
+- [x] Troféus: o contexto de troféus é criado e registrado, e os dados salvos carregam, sem erro.
+  Desbloquear um troféu não foi testado.
 
 ### Janela
 

@@ -47,8 +47,12 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 
 - [ ] Master League and Become a Legend: create, save, load, continue.
 - [ ] Saving and loading an edited Option File from inside the game.
-- [ ] Online modes: they should fail cleanly offline. Not tested.
-- [ ] Trophies (should be a no-op offline). Not tested.
+- [x] Online modes fail cleanly offline (headless, 2026-11-11): Online Community > My
+  communities goes back to the menu without a message, no hang. The network dialog answers
+  "connected" and the game then sees PSN offline; a "not connected" answer would let it show
+  its own message.
+- [x] Trophies: the trophy context is created and registered, and the saved data loads, with
+  no error. Unlocking one was not tried.
 
 ### Window
 
