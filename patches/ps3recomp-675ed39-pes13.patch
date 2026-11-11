@@ -745,10 +745,10 @@ index 4fed2533..97d52a56 100644
          result == CELL_SAVEDATA_CBRESULT_OK_LAST_NOCONFIRM) return CELL_OK;
      if (result != CELL_SAVEDATA_CBRESULT_OK_NEXT) {
 diff --git a/libs/system/sysPrxForUser.c b/libs/system/sysPrxForUser.c
-index b2cba7b6..c9f4a2bf 100644
+index b2cba7b6..49412821 100644
 --- a/libs/system/sysPrxForUser.c
 +++ b/libs/system/sysPrxForUser.c
-@@ -1042,6 +1042,72 @@ s32 sys_prx_exitspawn_with_level(void)
+@@ -1042,6 +1042,108 @@ s32 sys_prx_exitspawn_with_level(void)
      return CELL_OK;
  }
  
@@ -772,16 +772,18 @@ index b2cba7b6..c9f4a2bf 100644
 + *
 + *     sys_mempool_create(&pool, addr, size, block_size)
 + *
-+ * and asks how much of it is still free. A pool owns no memory of its own -- it
-+ * is a header over the caller's buffer -- so the honest model is the block
-+ * arithmetic, and the caller's own allocator does the handing out. Only these
-+ * two entries are imported by this title (create and get_count); the allocate /
-+ * free entries would be the place to grow if a title needed them.
++ * hands its blocks out with sys_mempool_try_allocate_block (the block's
++ * address, or 0 when none is free) and takes them back with
++ * sys_mempool_free_block. A pool owns no memory of its own -- it is a header
++ * over the caller's buffer -- so this keeps one "taken" flag per block.
++ * PES 2013 takes 38 blocks at startup; before these existed each call fell to
++ * the unresolved-import path and got 0.
 + * -----------------------------------------------------------------------*/
 +typedef struct {
 +    int in_use;
 +    u32 addr, size, block_size, blocks;
 +    u32 alloc_blocks;
++    u8* taken;          /* one flag per block */
 +} sys_mempool_t;
 +
 +static sys_mempool_t s_mempools[16];
@@ -799,6 +801,8 @@ index b2cba7b6..c9f4a2bf 100644
 +        s_mempools[i].block_size = block_size;
 +        s_mempools[i].blocks = size / block_size;
 +        s_mempools[i].alloc_blocks = 0;
++        free(s_mempools[i].taken);
++        s_mempools[i].taken = (u8*)calloc(s_mempools[i].blocks ? s_mempools[i].blocks : 1, 1);
 +        *hp = (u32)(0x50000100u + (u32)i);   /* opaque pool handle */
 +        printf("[sysPrxForUser] sys_mempool_create(addr=0x%08X size=0x%X "
 +               "block=0x%X) -> pool=0x%08X blocks=%u\n",
@@ -818,20 +822,54 @@ index b2cba7b6..c9f4a2bf 100644
 +    return CELL_OK;
 +}
 +
++static sys_mempool_t* mempool_of(u32 pool)
++{
++    const int i = (int)(pool - 0x50000100u);
++    if (i < 0 || i >= 16 || !s_mempools[i].in_use || !s_mempools[i].taken) return NULL;
++    return &s_mempools[i];
++}
++
++/* The address of a free block, or 0 when the pool is exhausted (never waits). */
++u32 sys_mempool_try_allocate_block(u32 pool)
++{
++    sys_mempool_t* mp = mempool_of(pool);
++    if (!mp) return 0;
++    for (u32 b = 0; b < mp->blocks; b++) {
++        if (mp->taken[b]) continue;
++        mp->taken[b] = 1;
++        mp->alloc_blocks++;
++        return mp->addr + b * mp->block_size;
++    }
++    return 0;
++}
++
++s32 sys_mempool_free_block(u32 pool, u32 block)
++{
++    sys_mempool_t* mp = mempool_of(pool);
++    if (!mp || block < mp->addr || (block - mp->addr) % mp->block_size) return CELL_EINVAL;
++    const u32 b = (block - mp->addr) / mp->block_size;
++    if (b >= mp->blocks || !mp->taken[b]) return CELL_EINVAL;
++    mp->taken[b] = 0;
++    mp->alloc_blocks--;
++    return CELL_OK;
++}
++
  s32 sys_prx_get_module_id_by_name(const char* name, u64 flags, u32* id)
  {
      (void)flags;
 diff --git a/libs/system/sysPrxForUser.h b/libs/system/sysPrxForUser.h
-index 30290c73..48f45ed2 100644
+index 30290c73..8832bbec 100644
 --- a/libs/system/sysPrxForUser.h
 +++ b/libs/system/sysPrxForUser.h
-@@ -167,6 +167,9 @@ s32   _sys_heap_free(sys_heap_t heap, void* ptr);
+@@ -167,6 +167,11 @@ s32   _sys_heap_free(sys_heap_t heap, void* ptr);
   * PRX utilities
   * -----------------------------------------------------------------------*/
  
 +s32 sys_prx_register_library(u32 lib_addr);
 +s32 sys_mempool_create(u32* pool, u32 addr, u32 size, u32 block_size);
 +s32 sys_mempool_get_count(u32 pool, u32* count);
++u32 sys_mempool_try_allocate_block(u32 pool);
++s32 sys_mempool_free_block(u32 pool, u32 block);
  s32 sys_prx_exitspawn_with_level(void);
  s32 sys_prx_get_module_id_by_name(const char* name, u64 flags, u32* id);
  
@@ -6968,6 +7006,62 @@ index 9d9df717..ac972ba4 100644
  #define vm_read8(a)  vm_read8_inl(a)
  #define vm_read16(a) vm_read16_inl(a)
  #define vm_read32(a) vm_read32_inl(a)
+diff --git a/libs/misc/cellMusic.c b/libs/misc/cellMusic.c
+new file mode 100644
+index 00000000..96470bad
+--- /dev/null
++++ b/libs/misc/cellMusic.c
+@@ -0,0 +1,22 @@
++/*
++ * ps3recomp - cellMusic (custom soundtrack) HLE
++ *
++ * The music utility plays the user's own tracks in place of a title's music.
++ * There is no music library here, so initialisation reports that the utility
++ * is unavailable, as a console with no music would leave the title on its own
++ * soundtrack. Before this existed the import was unresolved and answered
++ * CELL_OK, so a title could wait for an initialise callback that never came.
++ */
++
++#include "ps3emu/ps3types.h"
++#include "ps3emu/error_codes.h"
++#include <stdio.h>
++
++#define CELL_MUSIC_ERROR_GENERIC 0x8002C1FF
++
++s32 cellMusicInitialize2(s32 mode, s32 spuPriority, u32 func, u32 userData)
++{
++    (void)func; (void)userData;
++    printf("[cellMusic] Initialize2(mode=%d, spuPriority=%d) -> unavailable\n", mode, spuPriority);
++    return (s32)CELL_MUSIC_ERROR_GENERIC;
++}
+diff --git a/libs/misc/cellSearch.c b/libs/misc/cellSearch.c
+new file mode 100644
+index 00000000..b4043aa0
+--- /dev/null
++++ b/libs/misc/cellSearch.c
+@@ -0,0 +1,22 @@
++/*
++ * ps3recomp - cellSearch (content search) HLE
++ *
++ * Content search lists the user's music, photos and videos. There is no such
++ * library here, so initialisation reports that the utility is unavailable, as
++ * on a console with nothing to search. Before this existed the import was
++ * unresolved and answered CELL_OK, so a title could wait for an initialise
++ * callback that never came.
++ */
++
++#include "ps3emu/ps3types.h"
++#include "ps3emu/error_codes.h"
++#include <stdio.h>
++
++#define CELL_SEARCH_ERROR_GENERIC 0x8002C8FF
++
++s32 cellSearchInitialize(s32 mode, u32 container, u32 func, u32 userData)
++{
++    (void)container; (void)func; (void)userData;
++    printf("[cellSearch] Initialize(mode=%d) -> unavailable\n", mode);
++    return (s32)CELL_SEARCH_ERROR_GENERIC;
++}
 diff --git a/libs/video/tests/test_gcm_overrun.c b/libs/video/tests/test_gcm_overrun.c
 new file mode 100644
 index 00000000..d222db61

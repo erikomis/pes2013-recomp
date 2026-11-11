@@ -104,9 +104,13 @@ em janela e com teclado: um amistoso jogado até o fim.
       ficam em `WAIT_SIGNAL`; não está provado que decodifiquem.
 - [x] **Controle:** teclado (Enter = START, Espaço = CROSS) e DualSense pelo SDL. Falta
       mapear o esquema inteiro de controle do PES no launcher.
-- [ ] **Funções sem implementação:** `0x05C65656` (37 chamadas, biblioteca
-      desconhecida), `inet_addr`, `sceNpSns` e `cellSysutilAvconfExt`. Até agora
-      parecem inofensivas.
+- [ ] **Funções sem implementação:** restam `inet_addr` (`0xDABBC2C0`) e
+      `cellSysutilAvconfExt` (`0xFAA275A4`), uma chamada cada no boot; parecem inofensivas.
+      Feito em 11/11/2026: `0x05C65656` era `sys_mempool_try_allocate_block` (38 chamadas na
+      inicialização, todas recebiam 0); agora entrega blocos de verdade, junto com
+      `sys_mempool_free_block`. Com isso o jogo passou a ligar a trilha sonora personalizada
+      (`cellSearchInitialize`, `cellMusicInitialize2`), que agora responde "indisponível" em vez
+      de um OK falso. Visto sem janela até uma partida, sem chamadas novas sem implementação.
 
 ## 3. Para jogar uma partida (M2 a M5)
 
