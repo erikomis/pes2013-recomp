@@ -73,6 +73,11 @@ def main():
     pack = Path(a.pack)
     meta = json.loads((pack / "pack.json").read_text(encoding="utf-8"))
     by_edit = {f["key"]: f for f in meta["faces"]}
+    # the other Edit keys of a face (add_face_aliases.py) point at the same face
+    by_pid = {f["player_id"]: f for f in meta["faces"]}
+    for x in meta.get("aliases", []):
+        if x["player_id"] in by_pid:
+            by_edit.setdefault(x["key"], by_pid[x["player_id"]])
     dec = edit.decode(Path(a.eedit).read_bytes())
     rosters = {r["team_id"]: [m["player_id"] for m in r["members"]] for r in dec["rosters"]}
     names = {p["id"]: p["name"] for p in dec["players"]}
