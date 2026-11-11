@@ -394,5 +394,6 @@ rosto baixado continuam com rostos genéricos.
 - Cerca de 1 em cada 10 texturas de rosto sai com bytes diferentes de uma execução para outra,
   sem mudança no save (no Editar e na partida). `tools/add_face_aliases.py` acrescenta as outras
   chaves do Editar e `tools/add_match_faces.py` junta as variantes de cada partida gravada.
-- Resultado: 83 dos 93 na partida (eram 41). Visto num Flamengo x Santos: os 10 titulares do
-  Flamengo com rosto 2026 e 2 do Santos; o Pulgar ganhou a segunda variante nessa partida.
+- Resultado: 83 dos 93 na partida (eram 41). Visto num Flamengo x Santos: 9 dos 10 titulares do
+  Flamengo com rosto 2026 e 2 do Santos; o Pulgar veio com outra variante, que entrou no pacote
+  depois dessa partida (não revisto).
