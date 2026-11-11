@@ -53,7 +53,7 @@ toolkit fixes made for the inFAMOUS, Resistance and Deadpool ports. See
 | Internal resolution 1080p / 1440p / 4K (`PS3_RES_SCALE`) | 🧪 in the build since 2026-11-05; frame rate at each step not measured yet. Ultrawide: ⏳ needs a projection patch |
 | The app (launcher): play, graphics, controls, Option File profiles, saves | 🧪 built; not yet tested launching the game |
 | Season 2026 profile: Série A and B with 20 clubs each, Libertadores and Sudamericana clubs, names, squads, kits, crests | 🧪 seen headless in menus and pickers; a match with it not played yet |
-| 2026 positions and abilities | ✅ written for every renamed player; 🧪 920 from eFootball 2026 cards, the rest from a position template for now |
+| 2026 positions and abilities | ✅ written for every renamed player; 🧪 977 from eFootball 2026 cards, the rest from a position template for now |
 | HD pitch (4096x2048) | 🧪 the two pitches seen in matches, as a texture pack (`gramado-hd`) |
 | Real 2026 faces | 🧪 63 players as a texture pack (Pulgar and Arrascaeta seen); more to capture |
 | Closing the window ends the game | ✅ since 2026-11-06 (it used to keep running with no window) |

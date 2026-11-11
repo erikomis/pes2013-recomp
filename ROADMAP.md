@@ -115,8 +115,8 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 - [x] Positions, playable positions, abilities, foot, weak foot, form, height,
   age, nationality written for all 2,265 renamed players (2026-11-06; seen in
   Edit > Players). Abilities calibrated to PES 2013's scale.
-- [ ] Of those, 920 of 2,265 have their eFootball 2026 card so far (76 of 89 clubs searched); the rest
-  use a position template until pesdb.net's rate limit lets the collection finish.
+- [ ] Of those, 977 of 2,265 have their eFootball 2026 card (all 89 clubs searched, 2026-11-11); the other
+  1,288 have no card on eFootball (mostly Série B) and use a position template.
 - [x] Real 2026 faces as a texture pack: 63 players of 14 clubs, at 2-4x the
   PS3 resolution (seen: Pulgar, Arrascaeta).
 - [ ] The other 53 matched faces (no key captured yet) and the 54 face files

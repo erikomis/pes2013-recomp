@@ -150,7 +150,7 @@ Preparação parcial; itens abaixo ainda não concluídos:
       - [x] Posições, habilidades, pé, pé fraco, forma, altura, idade e nacionalidade
             nos 2.265 jogadores renomeados (visto em Editar > Jogadores).
       - [x] Nomes de 2026 nos 20 estádios do criador de estádios.
-      - [ ] Cartas do eFootball 2026: 920 aplicadas (11/11/2026, 76 de 89 clubes pesquisados; escalações refeitas); os outros usam um modelo por
+      - [ ] Cartas do eFootball 2026: 977 aplicadas (11/11/2026, os 89 clubes pesquisados; escalações refeitas); os outros 1.288 não têm carta; os outros usam um modelo por
             posição até a coleta no pesdb.net terminar.
       - [ ] As outras 53 faces ligadas a jogador e os 54 arquivos sem jogador de 2026.
       - [ ] Uniformes dos clubes estrangeiros: nenhuma fonte de 2026 encontrada.
