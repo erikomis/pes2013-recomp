@@ -383,3 +383,16 @@ e Gabriel Bontempo carregaram o rosto do pacote.
 Falta: os outros 52 do pacote (reservas nessas escalações) só ganham a chave da partida quando
 aparecem numa partida gravada; um reserva que entra no jogo ainda usa o rosto antigo. Os clubes sem
 rosto baixado continuam com rostos genéricos.
+
+## Rostos na partida para os reservas (11/11/2026)
+
+- `analysis/visual-2026/nav/start_missing.py` escala, numa cópia do perfil, os jogadores do pacote
+  ainda sem chave de partida; 9 amistosos automáticos (`matches.sh`) gravaram os rostos.
+- O roteiro de captura do Editar (`capture_faces.py`) agora confere na tela se cada aperto andou a
+  lista: com o Mac carregado o jogo perde apertos ou anda duas linhas, e os rostos caíam no
+  jogador errado. Comparada com essa conferência, a captura de 07/11 (a do pacote) está alinhada.
+- Cerca de 1 em cada 10 texturas de rosto sai com bytes diferentes de uma execução para outra,
+  sem mudança no save (no Editar e na partida). `tools/add_face_aliases.py` acrescenta as outras
+  chaves do Editar e `tools/add_match_faces.py` junta as variantes de cada partida gravada.
+- Resultado: 83 dos 93 na partida (eram 41). Visto num Flamengo x Santos: os 10 titulares do
+  Flamengo com rosto 2026 e 2 do Santos; o Pulgar ganhou a segunda variante nessa partida.

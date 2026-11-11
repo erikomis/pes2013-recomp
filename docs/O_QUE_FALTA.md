@@ -150,9 +150,10 @@ Preparação parcial; itens abaixo ainda não concluídos:
       - [x] Posições, habilidades, pé, pé fraco, forma, altura, idade e nacionalidade
             nos 2.265 jogadores renomeados (visto em Editar > Jogadores).
       - [x] Nomes de 2026 nos 20 estádios do criador de estádios.
-      - [x] Cartas do eFootball 2026: 977 aplicadas (11/11/2026, os 89 clubes pesquisados; escalações refeitas); os outros 1.288 não têm carta; os outros usam um modelo por
-            posição até a coleta no pesdb.net terminar.
-      - [ ] As outras 53 faces ligadas a jogador e os 54 arquivos sem jogador de 2026.
+      - [x] Cartas do eFootball 2026: 977 aplicadas (11/11/2026, os 89 clubes pesquisados; escalações refeitas); os outros 1.288 não têm carta e usam um modelo por
+            posição.
+      - [x] Rostos 2026: 93 no Editar, 83 na partida (11/11/2026). Faltam 10 na partida, as 23
+            faces ligadas sem chave e os 54 arquivos sem jogador de 2026.
       - [ ] Uniformes dos clubes estrangeiros: nenhuma fonte de 2026 encontrada.
       - [ ] Uma partida, a Master League e uma Libertadores jogadas com o perfil.
       - [ ] Copa do Brasil: o jogo não tem a competição nem vagas para 126 clubes; só

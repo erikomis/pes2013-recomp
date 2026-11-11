@@ -117,10 +117,13 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
   Edit > Players). Abilities calibrated to PES 2013's scale.
 - [x] Of those, 977 of 2,265 have their eFootball 2026 card (all 89 clubs searched, 2026-11-11); the other
   1,288 have no card on eFootball (mostly Série B) and use a position template.
-- [x] Real 2026 faces as a texture pack: 63 players of 14 clubs, at 2-4x the
-  PS3 resolution (seen: Pulgar, Arrascaeta).
-- [ ] The other 53 matched faces (no key captured yet) and the 54 face files
-  with no 2026 player of that name.
+- [x] Real 2026 faces as a texture pack: 93 players of 17 clubs, at 2-4x the PS3
+  resolution. All 93 in Edit (keys recaptured on 2026-11-07 and checked on screen for
+  Flamengo); 83 in matches, keyed from 9 automatic friendlies with the bench players starting
+  (2026-11-11). Some faces come out with different bytes from run to run; the pack carries
+  each variant seen (alias keys).
+- [ ] The last 10 faces in matches (4 Athletico, 2 Grêmio, 2 Palmeiras, 1 Botafogo,
+  1 Corinthians), and the 23 matched face files with no key and 54 with no 2026 player.
 - [x] The stadium creator's 20 stadiums renamed for 2026 (every Série A club
   has its stadium's name); only names, the looks stay.
 - [ ] Kits for the foreign clubs: no 2026 source found.

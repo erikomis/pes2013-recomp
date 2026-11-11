@@ -118,10 +118,13 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
   Jogadores). Habilidades calibradas para a escala do PES 2013.
 - [x] Desses, 977 de 2.265 têm a carta do eFootball 2026 (os 89 clubes pesquisados, 11/11/2026); os outros
   1.288 não têm carta no eFootball (a maioria da Série B) e usam um modelo por posição.
-- [x] Rostos reais de 2026 como pacote de texturas: 63 jogadores de 14 clubes, com 2 a 4
-  vezes a resolução do PS3 (vistos: Pulgar, Arrascaeta).
-- [ ] As outras 53 faces ligadas a jogador (sem chave capturada ainda) e os 54 arquivos
-  sem jogador de 2026 com esse nome.
+- [x] Rostos reais de 2026 como pacote de texturas: 93 jogadores de 17 clubes, com 2 a 4
+  vezes a resolução do PS3. Os 93 no Editar (chaves recapturadas em 07/11/2026 e conferidas
+  na tela no Flamengo); 83 na partida, com chaves tiradas de 9 amistosos automáticos com os
+  reservas escalados (11/11/2026). Alguns rostos mudam de bytes de uma execução para outra; o
+  pacote leva cada variante vista (chaves alternativas).
+- [ ] Os últimos 10 rostos na partida (4 do Athletico, 2 do Grêmio, 2 do Palmeiras, 1 do
+  Botafogo, 1 do Corinthians), as 23 faces ligadas sem chave e os 54 arquivos sem jogador de 2026.
 - [x] Os 20 estádios do criador de estádios com nomes de 2026 (todo clube da Série A tem
   o nome do seu estádio); só os nomes, a aparência fica.
 - [ ] Uniformes dos clubes estrangeiros: nenhuma fonte de 2026 encontrada.
