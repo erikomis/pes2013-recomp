@@ -125,7 +125,8 @@ def main():
         shutil.copyfile(pack / src["file"], out)
         added.append({"match_key": k, "edit_key": ek, "player_id": src["player_id"], "name": src["name"],
                       "file": out.name})
-    keep = {a["file"] for a in added}
+    # manual_match_faces: pairs found another way (a face swap), kept as they are
+    keep = {a["file"] for a in added} | {m["file"] for m in meta.get("manual_match_faces", [])}
     for f in pack.glob("*-match.png"):
         if f.name not in keep:
             f.unlink()

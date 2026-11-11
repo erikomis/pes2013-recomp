@@ -41,7 +41,11 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
   fora de ordem. Agora cada bloco sai pelo relógio, a cada 5,33 ms. Gravação da mesma partida:
   centenas de saltos nas emendas a cada 10 s antes, 4 em 6 minutos depois.
 - [ ] Confirmar em janela, com a build final e a máquina livre: 60 fps na partida
-  e som limpo. Outros processos pesados no Mac derrubam para 15-20 fps.
+  e som limpo. Corrigido em 11/11/2026, não testado em janela: com a janela coberta, minimizada ou
+  em outro Space, o macOS segurava cada quadro por até 1 s (`present` de 525-1055 ms no log de
+  08/11) e o som falhava junto; agora o quadro é desenhado e só a apresentação é pulada
+  (`PS3_PRESENT_WHEN_HIDDEN=1` volta ao antigo). Sobra o pico do próprio jogo (589 ms numa troca
+  de cena), que a folga de 43 ms do áudio não cobre. Outros processos pesados no Mac derrubam para 15-20 fps.
 - [x] Uma execução de teste sem janela terminou por volta de 490 s sem relatório
   de crash e sem código de saída gravado; a seguinte passou de 590 s. Os scripts
   de teste agora gravam o código de saída. Em 2026-11-06, 9 partidas sem janela (uma de

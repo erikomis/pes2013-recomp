@@ -41,7 +41,11 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
   now go out on the clock, 5.33 ms apart. Recorded mix of the same match: hundreds of seam
   jumps per 10 s before, 4 in 6 minutes after.
 - [ ] Confirm in a window, with the final build, on a quiet machine: 60 fps in
-  play and clean sound. Other heavy processes on the Mac take it to 15-20 fps.
+  play and clean sound. Fixed on 2026-11-11, not tried in a window: with the window covered,
+  minimized or on another Space, macOS held each frame for up to 1 s (`present` 525-1055 ms in the
+  2026-11-08 log) and the sound broke with it; the frame is now drawn and only the present is
+  skipped (`PS3_PRESENT_WHEN_HIDDEN=1` brings the wait back). The title's own spike (589 ms at a
+  scene change) remains, beyond the audio's 43 ms margin. Other heavy processes on the Mac take it to 15-20 fps.
 - [x] One headless test run ended at about 490 s with no crash report and no
   exit status recorded; the next run went past 590 s. Exit status is now
   recorded by the test scripts. On 2026-11-06, 9 headless matches (one of 15 min, the
