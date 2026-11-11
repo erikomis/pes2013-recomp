@@ -116,7 +116,7 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 - [x] Posições, posições que joga, habilidades, pé, pé fraco, forma, altura, idade e
   nacionalidade gravados nos 2.265 jogadores renomeados (2026-11-06; visto em Editar >
   Jogadores). Habilidades calibradas para a escala do PES 2013.
-- [ ] Desses, 349 já têm a carta do eFootball 2026 (toda a Série A e alguns estrangeiros); os outros usam um
+- [ ] Desses, 920 de 2.265 já têm a carta do eFootball 2026 (76 de 89 clubes pesquisados); os outros usam um
   modelo por posição até a coleta no pesdb.net terminar (o site limita a velocidade).
 - [x] Rostos reais de 2026 como pacote de texturas: 63 jogadores de 14 clubes, com 2 a 4
   vezes a resolução do PS3 (vistos: Pulgar, Arrascaeta).
