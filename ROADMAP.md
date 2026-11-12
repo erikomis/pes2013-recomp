@@ -147,6 +147,11 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 - [x] Honest settings: a control whose variable is not in the build says so.
 - [ ] First launch of the game from the app, in a window.
 - [ ] Release `.dmg`, install and rebuild from the app.
+- [ ] RecompLauncher: the profile (`recomplauncher.json`), the launcher's
+  headless `--prepare` / `--play` and `scripts/package-recomplauncher.sh` are
+  in; a release with that zip attached, a full prepare on a clean Mac, and the
+  listing on recomplauncher.com are still to do (launcher README,
+  "RecompLauncher").
 
 ### Other platforms
 

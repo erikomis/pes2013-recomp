@@ -108,8 +108,112 @@ with the seconds since launch before each line; the previous log moves to
 - `<data>` is `~/Library/Application Support/pes13-recomp/`. Its `keys/`
   folder is the owner's: the launcher only checks that
   `keys/savedata_keys.txt` exists and hands that path to
-  `tools/install_savedata.py`. It never reads, copies, lists, backs up or zips
-  it (tests check backups, zips and profile copies).
+  `tools/install_savedata.py` (and, for the headless `--prepare` below, that
+  `keys/self_keys.txt` exists, its path handed to `tools/decrypt_self.py`). It
+  never reads, copies, lists, backs up or zips it (tests check backups, zips
+  and profile copies).
+
+## RecompLauncher
+
+[RecompLauncher](https://recomplauncher.com) (a third-party launcher) installs
+recomps from their GitHub release zips. The profile it reads is
+`recomplauncher.json` at the repository's top, shipped at the top of the zip
+next to the .app:
+
+- **The copy** (`game`): the player's own US disc BLUS31029, as a decrypted
+  `.iso` or a folder with `PS3_GAME/` and `PS3_DISC.SFB` (checked by
+  `PS3_DISC.SFB` and the serial).
+- **The other files** (`inputs`): the 01.04 update `.pkg` (`update`, role
+  `update`, required) and Data Pack 6 (`pack`, role `dlc`, optional: its
+  `.pkg` or its folder with `USRDIR`). Prepare gets them as
+  `--update={input:update}` and `--pack={input:pack}`. The guide documents
+  `{input:<id>}` only for `start.args`; if a RecompLauncher version leaves the
+  placeholder in, prepare says so and takes the argument as not given, and the
+  update the window's Install card remembered (or a `game/EBOOT.BIN` already
+  extracted) is used instead.
+- **The key file is never an input**: RecompLauncher's `key` role is only for
+  its own shared Switch and Wii U keys, and nothing ships keys. `--prepare`
+  uses the key file Home > Install the game remembers (`install.keys` in
+  `launcher.json`), else `<data>/keys/self_keys.txt` when it is there (only
+  its existence is checked; its path goes to `tools/decrypt_self.py`). With
+  neither, and no `game/EBOOT.elf` decrypted yet, it stops with exit code 41
+  and a line telling the player to add the key file once in this window.
+- **The Option File** is left to this window's Option File page:
+  `--prepare` never installs one and never changes the active profile.
+- **Setup** (`prepare`): `PES 2013 Launcher.app/Contents/MacOS/pes2013-launcher
+  --prepare --game <copy> --update=<pkg> --pack=<pack>`, with a 2-hour limit.
+  It runs without a window and does what Home > Install the game does: the
+  copy checked (read only: the `.iso`'s ISO 9660 `PS3_DISC.SFB`, a folder's
+  `PARAM.SFO` and `PS3_DISC.SFB`), the update and data pack checked as the
+  Install card checks them, then the Command Line Tools (their installer is
+  opened, and it stops) and Homebrew's `cmake ninja sdl2 python@3.12` (only
+  looked at: it stops and names the `brew install` line; the window is what
+  installs them, after the player's yes). The copy is remembered as the disc
+  (an image as Game > Disc's image, a folder as the disc folder, passed to
+  Play as `PES_MOUNT`) and the files as the Install card's; then the same
+  install job (`install_job`, `spawn_install`: `install.zsh` with the sources
+  in `Contents/Resources/port`, `<data>/install.log`). A disc kept as a folder
+  links no image into `port/game_iso`. It prints `progress <0..1> <text>`
+  lines (the window's steps and weights from `src/progress.ts`, never going
+  back, with time moving a long step along) and the scripts' output as plain
+  lines, and exits 0 only when the game's build is there; then Play uses
+  `port/`, as after the window's install. One at a time (`<data>/prepare.lock`).
+  Running it again continues an install that stopped.
+- **Play** (`start`): `--play --game <copy>`. With `RECOMPLAUNCHER=1` (set by
+  RecompLauncher) the window never opens: the copy is remembered, the
+  window's Play runs (the profile, the disc, the settings, the save backup,
+  `last.log`), and the launcher's process becomes `tools/run.sh`, which execs
+  the game (`caffeinate` waits on it beside), so RecompLauncher sees the
+  game's own exit code and its Stop reaches the game. Without that variable
+  `--play` opens the window and plays once it is up, as before; `--game`
+  there is remembered first (a bad one is reported and the game is not
+  started).
+- **Already running** means a process whose command line has
+  `BLUS31029/PES2013Recomp` (any build of this game: the window, a terminal,
+  RecompLauncher), never the name alone.
+- **Settings** (`config`, `settings`): window mode and size, V-Sync,
+  resolution, upscaling, anti-aliasing, texture filtering, sharpening, the
+  console language, volume, Show FPS and Keep awake, written into
+  `launcher.json` (the same keys and values as the window; a test checks every
+  one reads back). A control whose variable the build does not read still
+  does nothing, as in the window.
+- **Saves and logs**: the default profile's
+  `<data>/port/rpcs3/dev_hdd0/home/00000001/savedata`, `<data>/profiles` and
+  `input.toml`; the logs folder is `<data>` itself, where `last.log` and
+  `install.log` are; the shader cache action clears `<data>/port/cache/msl`.
+
+Exit codes of `--prepare` and of `--play` under RecompLauncher (`prepare.rs`,
+`Exit`; the profile's `exit_codes` say them to the player, word for word,
+which a test checks):
+
+| Code | Meaning |
+|---|---|
+| 0 | prepare: the game is built; play: a normal quit (`"ok"`) |
+| 40 | no copy given, not found or not BLUS31029; the 01.04 update missing or not this game's (also a failure in the install's `game` step); a data pack that is not this game's |
+| 41 | the player has to do something first: the Command Line Tools (their installer is opened), Homebrew's formulas, the key file (or one that does not decrypt the EBOOT), not a Mac |
+| 42 | a download the install makes failed (the toolkit, Python packages: the connection) |
+| 43 | the install or the build failed (`install.log`), or too little free space |
+| 44 | another prepare, `tools/build.sh`'s lock, or this game's build is running |
+| 45 | play: the game is not built yet |
+| 46 | the launcher failed on its own (its settings, starting a program) |
+
+Trying it without touching your own install: `HOME=<scratch folder>` moves
+`<data>` there. A copy that is refused, `--prepare` with no `--game` or no
+update, no key file, or a lock held on
+`<scratch>/Library/Application Support/pes13-recomp/prepare.lock` exits before
+anything is built. Never try `--play` that way from a development build: the
+port folder is still found in the checkout the launcher was built from, and
+the game starts.
+
+**The zip**: `scripts/package-recomplauncher.sh [--app <.app>] [--out
+<folder>]` stages the port's sources and builds the release .app (or takes
+one), checks its program is where the profile says, that it is arm64, that it
+carries `Contents/Resources/port` and that `scripts/check_bundle.py` passes,
+and writes `pes2013-recomp-<version>-macos-arm64.zip` (the .app and
+`recomplauncher.json` at the top) into `launcher/release/`. It uploads
+nothing. Publishing a GitHub release with that zip attached, and getting the
+game listed on recomplauncher.com, are separate manual steps; the README's
+badge links to recomplauncher.com until then.
 
 ## Controls that the build does not have yet
 

@@ -107,10 +107,22 @@ fn file(what: &str, p: &str) -> Result<PathBuf, String> {
 /// folder with USRDIR or this game's package, the Option File holds this game's
 /// saves from a console.
 pub fn check(i: &Inputs, have_elf: bool, have_bin: bool) -> Result<Checked, String> {
-    let iso = file("the disc image (.iso)", &i.iso)?;
-    if !iso.extension().is_some_and(|e| e.eq_ignore_ascii_case("iso")) {
-        return Err(format!("{}: not an .iso", iso.display()));
-    }
+    check_inputs(i, have_elf, have_bin, true)
+}
+
+/// `check`, and with `need_iso` false an empty `iso` is allowed: the headless
+/// prepare (prepare.rs) for a disc the player keeps as a folder, which Play
+/// passes as PES_MOUNT, so no image is linked.
+pub fn check_inputs(i: &Inputs, have_elf: bool, have_bin: bool, need_iso: bool) -> Result<Checked, String> {
+    let iso = if !need_iso && i.iso.trim().is_empty() {
+        None
+    } else {
+        let iso = file("the disc image (.iso)", &i.iso)?;
+        if !iso.extension().is_some_and(|e| e.eq_ignore_ascii_case("iso")) {
+            return Err(format!("{}: not an .iso", iso.display()));
+        }
+        Some(iso)
+    };
     // the update is needed only until game/EBOOT.BIN is there
     let pkg = if i.pkg.trim().is_empty() && have_bin {
         None
@@ -152,7 +164,8 @@ pub fn check(i: &Inputs, have_elf: bool, have_bin: bool) -> Result<Checked, Stri
 
 #[derive(Debug)]
 pub struct Checked {
-    pub iso: PathBuf,
+    /// None: no image to link (check_inputs without need_iso).
+    pub iso: Option<PathBuf>,
     pub pkg: Option<PathBuf>,
     pub keys: Option<PathBuf>,
     pub pack: Option<PathBuf>,
@@ -168,7 +181,7 @@ impl Checked {
         vec![
             ("PES_DATA".into(), s(&l.data)),
             ("PES_STAGE".into(), s(stage)),
-            ("PES_ISO".into(), s(&self.iso)),
+            ("PES_ISO".into(), o(&self.iso)),
             ("PES_PKG".into(), o(&self.pkg)),
             ("PES_KEYS".into(), o(&self.keys)),
             ("PES_PACK".into(), o(&self.pack)),
@@ -238,6 +251,13 @@ mod tests {
         let mut i = ok.clone();
         i.iso = format!("{}/../{}", d.display(), "PES 2013.iso");
         assert!(check(&i, false, false).unwrap_err().contains("plain absolute"));
+        // no image only when the disc is a folder (the headless prepare)
+        let mut i = ok.clone();
+        i.iso = String::new();
+        assert!(check(&i, false, false).is_err());
+        assert!(check_inputs(&i, false, false, false).unwrap().iso.is_none());
+        i.iso = d.join("x.img").to_string_lossy().into();
+        assert!(check_inputs(&i, false, false, false).unwrap_err().contains("not an .iso"));
 
         // the data pack: a folder with USRDIR, or the game's package
         let mut i = ok.clone();
@@ -271,10 +291,13 @@ mod tests {
     fn environment_for_the_script() {
         let d = tmp("env");
         let l = Layout { data: d.join("data") };
-        let c = Checked { iso: d.join("a.iso"), pkg: None, keys: Some(d.join("k.txt")), pack: None, option_file: None, save_keys: None };
+        let c = Checked { iso: Some(d.join("a.iso")), pkg: None, keys: Some(d.join("k.txt")), pack: None, option_file: None, save_keys: None };
         let e: std::collections::BTreeMap<String, String> = c.env(&l, &d.join("stage")).into_iter().collect();
         assert_eq!(e["PES_DATA"], d.join("data").to_string_lossy());
         assert_eq!(e["PES_PKG"], "");
+        assert_eq!(e["PES_ISO"], d.join("a.iso").to_string_lossy());
+        let folder = Checked { iso: None, ..c };
+        assert_eq!(folder.env(&l, &d.join("stage")).into_iter().find(|(k, _)| k == "PES_ISO").unwrap().1, "", "a disc folder links no image");
         assert_eq!(e["PES_KEYS"], d.join("k.txt").to_string_lossy());
         assert_eq!(l.port(), d.join("data/port"));
         fs::remove_dir_all(&d).unwrap();

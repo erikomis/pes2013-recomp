@@ -18,13 +18,16 @@
 //! The launcher's data folder also holds `keys/`. Nothing here reads it, copies
 //! it, lists it or puts it in a backup, a report or a zip: only the existence of
 //! `keys/savedata_keys.txt` is looked at, and its path handed to
-//! tools/install_savedata.py.
+//! tools/install_savedata.py (and, for the headless `--prepare` when the window
+//! has no key file, `keys/self_keys.txt`, its path handed to
+//! tools/decrypt_self.py; prepare.rs).
 
 mod app_icon;
 mod input_map;
 mod install;
 mod mods;
 mod play_shortcut;
+mod prepare;
 mod profiles;
 mod report;
 mod saves;
@@ -1410,73 +1413,16 @@ fn start_game(app: AppHandle, state: State<'_, AppState>, diagnostic: Option<boo
         return Err("an Option File profile is being changed: wait for it to finish".into());
     }
     let s = load_settings_file();
-    let root = port_root(&s).ok_or("no port folder: pick it in Advanced > Install / rebuild")?;
-    let b = resolve_builds(&root);
-    if !b.ok {
-        return Err(format!("missing in {}: {}", b.root, b.missing.join(", ")));
-    }
-    let profile = active_profile(&s)?;
-    if !profile.exists {
-        return Err(format!("the Option File profile {}: {} is not there", profile.name, profile.root));
-    }
-    let mut mounted = None;
-    let disc = match find_disc(&s) {
-        Some(d) => Some(d),
-        None if s.auto_mount && !s.disc_image.trim().is_empty() => {
-            let d = attach_image(Path::new(s.disc_image.trim()))?;
-            mounted = Some(self::s(&d));
-            Some(d)
-        }
-        // run.sh mounts it
-        None if port_iso(&root).is_some() => None,
-        None => return Err("no-disc".into()),
-    };
-    if let Some(d) = &disc {
-        if disc_title_id(d).as_deref() != Some(TITLE_ID) {
-            return Err(format!("{}: not a {TITLE_ID} disc", d.display()));
-        }
-    }
-    let data = data_root();
-    fs::create_dir_all(data.join("logs")).map_err(|e| format!("{}: {e}", data.display()))?;
-    let features = feature_set(&b, &state.features);
-    let report_dir = if diagnostic.unwrap_or(false) { Some(report::create(&reports_dir(), &saves::stamp(now_secs()))?) } else { None };
-    // last.log: the previous session's moves to logs/; a debug session keeps
-    // its log in its own folder
-    let previous_log = if report_dir.is_none() { rotate_log(&data.join(LOG_NAME), &sessions_dir(), LOG_KEEP) } else { None };
-    let log_path = match &report_dir {
-        Some(d) => d.join(report::LOG),
-        None => data.join(LOG_NAME),
-    };
+    let PlayRun { argv, env, root, report_dir, builds: b, disc, backup, backup_error, mounted, profile } = play_run(&s, &state.features, diagnostic.unwrap_or(false))?;
+    let (log_path, previous_log) = session_log(report_dir.as_deref());
     // the game writes <log>.raw; a thread stamps each line into <log>
     let raw_path = log_path.with_extension("log.raw");
     let stamped = fs::File::create(&log_path).map_err(|e| format!("{}: {e}", log_path.display()))?;
     let log = fs::File::create(&raw_path).map_err(|e| format!("{}: {e}", raw_path.display()))?;
     let log2 = log.try_clone().map_err(|e| e.to_string())?;
 
-    // the saves as they are now, before the game can touch them (off by default)
-    let (backup, backup_error) = match saves::backup_before_play(&locations_of(&profile), s.save_backups_keep, now_secs()) {
-        Ok(b) => (b.map(|b| b.id), None),
-        Err(e) => (None, Some(e)),
-    };
-
-    let argv = launch_argv(&s, &b)?;
-    let over = mount_override(disc.as_deref());
-    let mut env = launch_env(&s, &root, Path::new(&profile.root), over.as_deref(), &input_env(), &features);
-    if let Some(d) = &report_dir {
-        env.extend(report::env(d, features.contains("RSX_ENGINE_PASS_DUMP_TRIGGER"))); // after the extra variables: the report's paths win
-    }
-    let mut cmd = Command::new(&argv[0]);
-    cmd.args(&argv[1..])
-        .current_dir(&root)
-        .env("PATH", tool_path())
-        .env_remove("PS3RECOMP_METAL_HEADLESS")
-        .env_remove("PS3_ARGV")
-        .stdin(Stdio::null())
-        .stdout(log)
-        .stderr(log2);
-    for (k, v) in &env {
-        cmd.env(k, v);
-    }
+    let mut cmd = game_command(&argv, &env, &root);
+    cmd.stdout(log).stderr(log2);
     own_process_group(&mut cmd);
     let mut child = cmd.spawn().map_err(|e| {
         let _ = fs::remove_file(&raw_path);
@@ -1531,9 +1477,126 @@ fn start_game(app: AppHandle, state: State<'_, AppState>, diagnostic: Option<boo
         backup_error,
         report: report_dir.map(|d| self::s(&d)),
         mounted,
-        profile: profile.name,
+        profile,
         previous_log: previous_log.map(|p| self::s(&p)),
     })
+}
+
+/// Why Play cannot start: the game is not built (or no port folder), the
+/// disc ("no-disc", not BLUS31029, the image would not attach), or anything
+/// else. The window shows the text; `--play` under RecompLauncher maps the
+/// kind onto its exit codes (prepare.rs).
+#[derive(Debug)]
+pub(crate) enum PlayRefusal {
+    NotBuilt(String),
+    Disc(String),
+    Other(String),
+}
+
+impl From<PlayRefusal> for String {
+    fn from(r: PlayRefusal) -> String {
+        match r {
+            PlayRefusal::NotBuilt(e) | PlayRefusal::Disc(e) | PlayRefusal::Other(e) => e,
+        }
+    }
+}
+
+/// Everything Play decides before the game starts, for the window's Play and
+/// `--play` under RecompLauncher alike.
+pub(crate) struct PlayRun {
+    argv: Vec<String>,
+    env: Vec<(String, String)>,
+    /// The port folder, where it runs.
+    root: PathBuf,
+    report_dir: Option<PathBuf>,
+    builds: Builds,
+    disc: Option<PathBuf>,
+    backup: Option<String>,
+    backup_error: Option<String>,
+    /// The disc was mounted from the remembered image for this game.
+    mounted: Option<String>,
+    /// The Option File profile it plays with.
+    profile: String,
+}
+
+/// The builds, the profile, the disc (attached from the remembered image when
+/// needed), the debug session's folder, the save backup made before the game
+/// can touch the saves, the command line and the environment.
+fn play_run(s: &Settings, features: &Mutex<FeatureCache>, diagnostic: bool) -> Result<PlayRun, PlayRefusal> {
+    use PlayRefusal::*;
+    let root = port_root(s).ok_or_else(|| NotBuilt("no port folder: pick it in Advanced > Install / rebuild".into()))?;
+    let b = resolve_builds(&root);
+    if !b.ok {
+        return Err(NotBuilt(format!("missing in {}: {}", b.root, b.missing.join(", "))));
+    }
+    let profile = active_profile(s).map_err(Other)?;
+    if !profile.exists {
+        return Err(Other(format!("the Option File profile {}: {} is not there", profile.name, profile.root)));
+    }
+    let mut mounted = None;
+    let disc = match find_disc(s) {
+        Some(d) => Some(d),
+        None if s.auto_mount && !s.disc_image.trim().is_empty() => {
+            let d = attach_image(Path::new(s.disc_image.trim())).map_err(Disc)?;
+            mounted = Some(self::s(&d));
+            Some(d)
+        }
+        // run.sh mounts it
+        None if port_iso(&root).is_some() => None,
+        None => return Err(Disc("no-disc".into())),
+    };
+    if let Some(d) = &disc {
+        if disc_title_id(d).as_deref() != Some(TITLE_ID) {
+            return Err(Disc(format!("{}: not a {TITLE_ID} disc", d.display())));
+        }
+    }
+    let data = data_root();
+    fs::create_dir_all(data.join("logs")).map_err(|e| Other(format!("{}: {e}", data.display())))?;
+    let features = feature_set(&b, features);
+    let report_dir = if diagnostic { Some(report::create(&reports_dir(), &saves::stamp(now_secs())).map_err(Other)?) } else { None };
+
+    // the saves as they are now, before the game can touch them (off by default)
+    let (backup, backup_error) = match saves::backup_before_play(&locations_of(&profile), s.save_backups_keep, now_secs()) {
+        Ok(b) => (b.map(|b| b.id), None),
+        Err(e) => (None, Some(e)),
+    };
+
+    let argv = launch_argv(s, &b).map_err(NotBuilt)?;
+    let over = mount_override(disc.as_deref());
+    let mut env = launch_env(s, &root, Path::new(&profile.root), over.as_deref(), &input_env(), &features);
+    if let Some(d) = &report_dir {
+        env.extend(report::env(d, features.contains("RSX_ENGINE_PASS_DUMP_TRIGGER"))); // after the extra variables: the report's paths win
+    }
+    Ok(PlayRun { argv, env, root, report_dir, builds: b, disc, backup, backup_error, mounted, profile: profile.name })
+}
+
+/// A game session's log: <data>/last.log, the previous session's moved to
+/// logs/ first; a debug session keeps its log in its own folder. Returns the
+/// log's path and where the previous one went.
+fn session_log(report_dir: Option<&Path>) -> (PathBuf, Option<PathBuf>) {
+    let data = data_root();
+    match report_dir {
+        Some(d) => (d.join(report::LOG), None),
+        None => (data.join(LOG_NAME), rotate_log(&data.join(LOG_NAME), &sessions_dir(), LOG_KEEP)),
+    }
+}
+
+/// The game's command: its program and arguments, run in the port folder, with
+/// the tool PATH and the variables a parent may have left that the game must
+/// not inherit taken out, then `env`. Output and the process group are the
+/// caller's.
+fn game_command(argv: &[String], env: &[(String, String)], root: &Path) -> Command {
+    let mut cmd = Command::new(&argv[0]);
+    cmd.args(&argv[1..])
+        .current_dir(root)
+        .env("PATH", tool_path())
+        .env_remove("PS3RECOMP_METAL_HEADLESS")
+        .env_remove("PS3_ARGV")
+        .stdin(Stdio::null());
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    cmd
 }
 
 /// Stop: SIGTERM to the process group Play started; if that group is still
@@ -1934,6 +1997,27 @@ async fn mount_image(path: String) -> Result<DiscInfo, String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// Make this the disc Play uses, without mounting anything (`--game`,
+/// prepare.rs): a folder holding PS3_GAME/ (or PS3_GAME itself) becomes the
+/// disc folder and replaces a remembered image; an image becomes the
+/// remembered image (Play attaches it when no disc is mounted, as with Game >
+/// Disc) and replaces a remembered folder. Returns what was remembered.
+fn remember_disc(p: &Path) -> Result<PathBuf, String> {
+    let mut st = load_settings_file();
+    let at = if p.is_dir() {
+        let root = disc_root_of(p).ok_or_else(|| format!("{}: no PS3_GAME folder in it", p.display()))?;
+        st.disc_image.clear();
+        st.disc_path = s(&root);
+        root
+    } else {
+        st.disc_image = s(p);
+        st.disc_path.clear();
+        p.to_path_buf()
+    };
+    write_settings(&st)?;
+    Ok(at)
 }
 
 /// Eject the disc when it is a mounted image (refused while the game runs).
@@ -2355,8 +2439,14 @@ async fn check_prereqs() -> Prereqs {
 /// The port's sources the app carries (scripts/stage_port.py, bundled as
 /// Resources/port), or in a development build the stage beside it.
 fn bundled_stage(app: &AppHandle) -> Option<PathBuf> {
+    stage_in(app.path().resource_dir().ok())
+}
+
+/// The bundled stage under an app's resource folder (Contents/Resources on
+/// macOS), else the development stage.
+fn stage_in(resource_dir: Option<PathBuf>) -> Option<PathBuf> {
     let mut cands = Vec::new();
-    if let Ok(res) = app.path().resource_dir() {
+    if let Some(res) = resource_dir {
         cands.push(res.join("port"));
     }
     cands.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../stage/port"));
@@ -2401,6 +2491,104 @@ fn cancel_setup(state: State<'_, AppState>) {
     }
 }
 
+/// Why "Install the game" cannot start. The window explains `Clt`, `Brew` and
+/// `Disk` itself (window_text: "clt", "brew", "disk:<gb>"); the headless
+/// prepare maps them onto its exit codes.
+#[derive(Debug)]
+pub(crate) enum InstallRefusal {
+    /// Apple's Command Line Tools (the compiler and git) are not installed.
+    Clt,
+    /// Homebrew's cmake, ninja, sdl2 or python@3.12 are missing.
+    Brew,
+    /// Less free space than an install asks for (GB free).
+    Disk(u64),
+    /// The player's files (install::check's reasons).
+    Inputs(String),
+    Other(String),
+}
+
+impl InstallRefusal {
+    fn window_text(self) -> String {
+        match self {
+            InstallRefusal::Clt => "clt".into(),
+            InstallRefusal::Brew => "brew".into(),
+            InstallRefusal::Disk(gb) => format!("disk:{gb}"),
+            InstallRefusal::Inputs(e) | InstallRefusal::Other(e) => e,
+        }
+    }
+}
+
+/// "Install the game", ready to start: the zsh command.
+pub(crate) struct InstallJob {
+    cmd: Command,
+}
+
+/// Everything "Install the game" decides before it starts, shared by the
+/// window's button (start_install) and the headless `--prepare`: the Command
+/// Line Tools, Homebrew's formulas, the player's files (install::check; with
+/// `need_iso` false a disc kept as a folder links no image), the free space,
+/// and the command with its environment. Writes nothing but the data folder.
+fn install_job(inputs: &install::Inputs, stage: &Path, need_iso: bool) -> Result<InstallJob, InstallRefusal> {
+    if !clt_installed() {
+        return Err(InstallRefusal::Clt);
+    }
+    if !install::brew_missing(&brew_prefix()).is_empty() {
+        return Err(InstallRefusal::Brew);
+    }
+    let l = install_layout();
+    let game = l.port().join("game");
+    let (have_elf, have_bin) = (game.join("EBOOT.elf").is_file(), game.join("EBOOT.BIN").is_file());
+    let checked = if need_iso { install::check(inputs, have_elf, have_bin) } else { install::check_inputs(inputs, have_elf, have_bin, false) }.map_err(InstallRefusal::Inputs)?;
+    fs::create_dir_all(&l.data).map_err(|e| InstallRefusal::Other(format!("{}: {e}", l.data.display())))?;
+    if let Some(gb) = free_gb(&l.data) {
+        let done = resolve_builds(&l.port()).ok;
+        if !done && gb < install::NEED_GB {
+            return Err(InstallRefusal::Disk(gb));
+        }
+    }
+    let mut cmd = Command::new("/usr/bin/nice");
+    cmd.args(["-n", "10", "/bin/zsh", "-c", install::SCRIPT])
+        .current_dir(&l.data)
+        .env("PATH", tool_path())
+        .env("TERM", "dumb")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        // the scripts find their folders from the install's environment
+        .env_remove("PES_ROOT")
+        .env_remove("PS3RECOMP_DIR")
+        .env_remove("PES_VENV")
+        .env_remove("PY")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for (k, v) in checked.env(&l, stage) {
+        cmd.env(k, v);
+    }
+    let jobs = load_settings_file().jobs;
+    if jobs > 0 {
+        cmd.env("JOBS", jobs.to_string());
+    }
+    own_process_group(&mut cmd);
+    Ok(InstallJob { cmd })
+}
+
+/// Start an install job: its output into `<data>/install.log` and `sink`, the
+/// command line first. Returns the child's pid and the thread that ends once
+/// `sink` has its exit code.
+fn spawn_install(job: InstallJob, sink: std::sync::Arc<dyn OutputSink>) -> Result<(u32, thread::JoinHandle<()>), String> {
+    let InstallJob { mut cmd } = job;
+    let l = install_layout();
+    let log = fs::File::create(l.log()).ok();
+    let child = cmd.spawn().map_err(|e| format!("zsh: {e}"))?;
+    let pid = child.id();
+    let first = format!("$ install   # into {}", l.data.display());
+    if let Some(mut f) = log.as_ref().and_then(|f| f.try_clone().ok()) {
+        use std::io::Write;
+        let _ = writeln!(f, "{first}");
+    }
+    sink.line(&first);
+    Ok((pid, stream_output(child, log, sink)))
+}
+
 /// Home > "Install the game": install.zsh with the player's files, in the data
 /// folder, its output streamed as rebuild-line / rebuild-exit and kept in
 /// <data>/install.log. Pressing it again continues where it stopped.
@@ -2424,52 +2612,16 @@ fn start_install(app: AppHandle, state: State<'_, AppState>, inputs: install::In
         return Err("brew".into());
     }
     let stage = bundled_stage(&app).ok_or("this app carries no port sources (a development build: run scripts/stage_port.py)")?;
-    let l = install_layout();
-    let game = l.port().join("game");
-    let checked = install::check(&inputs, game.join("EBOOT.elf").is_file(), game.join("EBOOT.BIN").is_file())?;
-    fs::create_dir_all(&l.data).map_err(|e| format!("{}: {e}", l.data.display()))?;
-    if let Some(gb) = free_gb(&l.data) {
-        let done = resolve_builds(&l.port()).ok;
-        if !done && gb < install::NEED_GB {
-            return Err(format!("disk:{gb}"));
-        }
-    }
+    let job = install_job(&inputs, &stage, true).map_err(InstallRefusal::window_text)?;
     let mut st = load_settings_file();
     st.install = inputs;
     write_settings(&st)?;
-    let mut cmd = Command::new("/usr/bin/nice");
-    cmd.args(["-n", "10", "/bin/zsh", "-c", install::SCRIPT])
-        .current_dir(&l.data)
-        .env("PATH", tool_path())
-        .env("TERM", "dumb")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        // the scripts find their folders from the install's environment
-        .env_remove("PES_ROOT")
-        .env_remove("PS3RECOMP_DIR")
-        .env_remove("PES_VENV")
-        .env_remove("PY")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    for (k, v) in checked.env(&l, &stage) {
-        cmd.env(k, v);
-    }
-    if st.jobs > 0 {
-        cmd.env("JOBS", st.jobs.to_string());
-    }
-    own_process_group(&mut cmd);
-    let log = fs::File::create(l.log()).ok();
-    let child = cmd.spawn().map_err(|e| format!("zsh: {e}"))?;
-    *slot = Some(child.id());
+    let sink = std::sync::Arc::new(WindowSink { app: app.clone(), event: "rebuild", which: |s| &s.rebuild });
+    // the slot is held until the pid is in it: the exit cannot free it first
+    let (pid, _) = spawn_install(job, sink)?;
+    *slot = Some(pid);
     drop(slot);
-    let first = format!("$ install   # into {}", l.data.display());
-    if let Some(mut f) = log.as_ref().and_then(|f| f.try_clone().ok()) {
-        use std::io::Write;
-        let _ = writeln!(f, "{first}");
-    }
-    let _ = app.emit("rebuild-line", first);
-    stream_child_logged(&app, child, "rebuild", |s| &s.rebuild, log);
-    Ok(s(&l.port()))
+    Ok(s(&install_layout().port()))
 }
 
 /// After a successful install: Play uses the installed port, and the Option File
@@ -2479,6 +2631,14 @@ fn install_finished(state: State<'_, AppState>) -> Result<(), String> {
     if game_busy(&state) {
         return Err(BUSY.into());
     }
+    finish_install(true)
+}
+
+/// Play uses the installed port from now on (the port folder setting), and
+/// with `option_file` the Option File profile the install made, when it made
+/// one, is the active one (the headless prepare installs none, so it leaves
+/// the active profile alone). Refused when the build is not complete.
+fn finish_install(option_file: bool) -> Result<(), String> {
     let mut st = load_settings_file();
     let port = install_layout().port();
     if !resolve_builds(&port).ok {
@@ -2486,7 +2646,7 @@ fn install_finished(state: State<'_, AppState>) -> Result<(), String> {
     }
     st.port_dir = s(&port);
     if let Ok(p) = profiles::resolve(&profile_store(&st), "local:Option File") {
-        if !st.install.option_file.trim().is_empty() {
+        if option_file && !st.install.option_file.trim().is_empty() {
             st.active_profile = p.id;
         }
     }
@@ -2495,6 +2655,13 @@ fn install_finished(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 fn install_clt() -> Result<(), String> {
+    open_clt_installer()
+}
+
+/// Apple's own installer for the Command Line Tools (`xcode-select
+/// --install`): a window of its own the player clicks through. The window's
+/// Install the game waits for it; the headless prepare says so and stops.
+fn open_clt_installer() -> Result<(), String> {
     Command::new("xcode-select")
         .arg("--install")
         .stdin(Stdio::null())
@@ -2505,41 +2672,69 @@ fn install_clt() -> Result<(), String> {
         .map_err(|e| format!("xcode-select: {e}"))
 }
 
+/// Where a child's output goes while it runs (the install, a rebuild, the
+/// build tools, a pull): the window (`WindowSink`, Tauri events) or the
+/// headless `--prepare` (prepare.rs, progress lines on stdout). The same
+/// commands feed both.
+pub(crate) trait OutputSink: Send + Sync + 'static {
+    /// One line of its stdout or stderr, as the scripts printed it.
+    fn line(&self, line: &str);
+    /// It ended with this code (-1: killed, or no code).
+    fn exit(&self, code: i32);
+}
+
+/// The window: each line as `<event>-line`, the code as `<event>-exit`, and
+/// the slot that held the child's pid freed.
+struct WindowSink {
+    app: AppHandle,
+    event: &'static str,
+    which: fn(&AppState) -> &Mutex<Option<u32>>,
+}
+
+impl OutputSink for WindowSink {
+    fn line(&self, line: &str) {
+        let _ = self.app.emit(&format!("{}-line", self.event), line.to_string());
+    }
+    fn exit(&self, code: i32) {
+        *(self.which)(&self.app.state::<AppState>()).lock().unwrap() = None;
+        let _ = self.app.emit(&format!("{}-exit", self.event), code);
+    }
+}
+
 /// Stream a child's stdout and stderr to the window as `<event>-line`, and
 /// its exit code as `<event>-exit`; `slot` holds its pid while it runs.
 fn stream_child(app: &AppHandle, child: std::process::Child, event: &'static str, which: fn(&AppState) -> &Mutex<Option<u32>>) {
-    stream_child_logged(app, child, event, which, None)
+    stream_output(child, None, std::sync::Arc::new(WindowSink { app: app.clone(), event, which }));
 }
 
-/// stream_child, each line also written to `log` (the install's log file).
-fn stream_child_logged(app: &AppHandle, mut child: std::process::Child, event: &'static str, which: fn(&AppState) -> &Mutex<Option<u32>>, log: Option<fs::File>) {
+/// Hand a child's stdout and stderr, line by line, to `sink` (each line also
+/// written to `log`, the install's log file), then its exit code once it has
+/// ended and its output has been read (up to 3 s more: a grandchild that keeps
+/// the pipes open does not hold the exit back). The returned thread ends after
+/// `sink.exit`.
+fn stream_output(mut child: std::process::Child, log: Option<fs::File>, sink: std::sync::Arc<dyn OutputSink>) -> thread::JoinHandle<()> {
     use std::io::Write;
     let log = std::sync::Arc::new(Mutex::new(log));
-    let (stdout, stderr) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
-    let (a1, l1) = (app.clone(), log.clone());
-    thread::spawn(move || {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if let Some(f) = l1.lock().unwrap().as_mut() {
-                let _ = writeln!(f, "{line}");
+    let read = |pipe: Box<dyn Read + Send>, log: std::sync::Arc<Mutex<Option<fs::File>>>, sink: std::sync::Arc<dyn OutputSink>| {
+        thread::spawn(move || {
+            for line in BufReader::new(pipe).lines().map_while(Result::ok) {
+                if let Some(f) = log.lock().unwrap().as_mut() {
+                    let _ = writeln!(f, "{line}");
+                }
+                sink.line(&line);
             }
-            let _ = a1.emit(&format!("{event}-line"), line);
-        }
-    });
-    let (a2, l2) = (app.clone(), log);
-    thread::spawn(move || {
-        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-            if let Some(f) = l2.lock().unwrap().as_mut() {
-                let _ = writeln!(f, "{line}");
-            }
-            let _ = a2.emit(&format!("{event}-line"), line);
-        }
-    });
-    let a3 = app.clone();
+        })
+    };
+    let r1 = read(Box::new(child.stdout.take().unwrap()), log.clone(), sink.clone());
+    let r2 = read(Box::new(child.stderr.take().unwrap()), log, sink.clone());
     thread::spawn(move || {
         let code = child.wait().map(|s| s.code().unwrap_or(-1)).unwrap_or(-1);
-        *which(&a3.state::<AppState>()).lock().unwrap() = None;
-        let _ = a3.emit(&format!("{event}-exit"), code);
-    });
+        let t0 = std::time::Instant::now();
+        while !(r1.is_finished() && r2.is_finished()) && t0.elapsed() < std::time::Duration::from_secs(3) {
+            thread::sleep(std::time::Duration::from_millis(20));
+        }
+        sink.exit(code);
+    })
 }
 
 /// tools/rebuild.sh's steps, in its order. Its build step goes through
@@ -3515,14 +3710,23 @@ async fn profile_import_zip(app: AppHandle, id: String, path: String) -> Result<
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Decided before any window exists: `--prepare` (the headless install)
+    // and `--play` under RecompLauncher (RECOMPLAUNCHER=1) never start the
+    // Tauri event loop; they exit with their own codes (prepare.rs).
+    let args: Vec<String> = std::env::args().collect();
+    let play_ok = match prepare::mode(&args, prepare::under_recomplauncher()) {
+        prepare::Mode::Prepare(a) => std::process::exit(prepare::prepare_main(&a)),
+        prepare::Mode::PlayDirect { game } => std::process::exit(prepare::play_direct(game.as_deref())),
+        prepare::Mode::Window { game } => prepare::window_game(game.as_deref()),
+    };
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
-        .setup(|app| {
+        .setup(move |app| {
             sync_app_icon(app.handle());
             let args: Vec<String> = std::env::args().collect();
             let st = app.state::<AppState>();
-            *st.play_request.lock().unwrap() = play_shortcut::requested(args.iter().cloned());
+            *st.play_request.lock().unwrap() = play_ok && play_shortcut::requested(args.iter().cloned());
             *st.exit_with_game.lock().unwrap() = play_shortcut::exit_requested(&args);
             *st.start_view.lock().unwrap() = play_shortcut::start_view(&args);
             Ok(())

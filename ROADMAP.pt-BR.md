@@ -147,6 +147,10 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 - [x] Ajustes honestos: um controle cuja variável não está na build avisa isso.
 - [ ] Primeira abertura do jogo pelo app, em janela.
 - [ ] `.dmg` de release, instalar e recompilar pelo app.
+- [ ] RecompLauncher: o perfil (`recomplauncher.json`), o `--prepare` /
+  `--play` sem janela do launcher e o `scripts/package-recomplauncher.sh` já
+  estão aqui; falta uma release com esse zip, um prepare completo num Mac limpo
+  e a listagem no recomplauncher.com (README do launcher, "RecompLauncher").
 
 ### Outras plataformas
 
