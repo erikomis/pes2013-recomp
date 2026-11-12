@@ -1,0 +1,217 @@
+{
+  "$schema": "https://recomplauncher.com/schema/recomplauncher.json",
+  "format": 1,
+  "name": "Pro Evolution Soccer 2013",
+  "repo": "erikomis/pes2013-recomp",
+  "requires": ["start", "start.macos", "exit_codes", "settings.json", "settings.choices", "settings.slider", "settings.groups"],
+  "min": "0.90.0-beta.27",
+  "game": {
+    "kind": "iso_or_folder",
+    "label": "Your own copy of Pro Evolution Soccer 2013, US disc BLUS31029: its decrypted disc image (.iso), or its folder with PS3_GAME and PS3_DISC.SFB in it (as RPCS3 uses). Other regions don't work yet. Setup also asks for its 01.04 update.",
+    "check": {
+      "file": "PS3_DISC.SFB",
+      "iso9660": "PS3_DISC.SFB",
+      "ids": ["BLUS31029"]
+    }
+  },
+  "inputs": [
+    {
+      "id": "update",
+      "label": "The game's 01.04 update for the US disc BLUS31029, as its .pkg from PlayStation Network",
+      "role": "update",
+      "formats": [{ "type": "file", "extensions": ["pkg"] }]
+    },
+    {
+      "id": "pack",
+      "label": "Optional: Data Pack 6 for BLUS31029, as its .pkg or the folder with USRDIR in it",
+      "role": "dlc",
+      "optional": true,
+      "formats": [{ "type": "file", "extensions": ["pkg"] }, { "type": "folder" }]
+    }
+  ],
+  "start": {
+    "program": ["PES 2013 Launcher.app/Contents/MacOS/pes2013-launcher"],
+    "args": ["--play", "--game", "{game}"]
+  },
+  "prepare": {
+    "program": ["PES 2013 Launcher.app/Contents/MacOS/pes2013-launcher"],
+    "args": ["--prepare", "--game", "{game}", "--update={input:update}", "--pack={input:pack}"],
+    "label": "Building the game for your Mac from your disc and its 01.04 update (the first time takes 30 to 60 minutes and about 10 GB; it needs Apple's Command Line Tools, Homebrew's cmake, ninja, sdl2 and python@3.12, and the key file added once in the PES 2013 Launcher window)",
+    "timeout": 7200
+  },
+  "config": [
+    {
+      "id": "main",
+      "format": "json",
+      "file": [{ "path": "{home}/Library/Application Support/pes13-recomp/launcher.json" }]
+    }
+  ],
+  "groups": [{ "id": "Display" }, { "id": "Picture" }, { "id": "Sound and system" }],
+  "settings": [
+    {
+      "id": "window_mode",
+      "label": "Window",
+      "group": "Display",
+      "help": "Full screen is macOS's own (its own Space). Borderless covers the screen without changing Spaces.",
+      "choices": [
+        { "label": "Windowed", "set": { "windowMode": "\"windowed\"" } },
+        { "label": "Full screen", "set": { "windowMode": "\"fullscreen\"" } },
+        { "label": "Borderless", "set": { "windowMode": "\"borderless\"" } }
+      ],
+      "defaults": { "windowMode": "\"windowed\"" }
+    },
+    {
+      "id": "window_size",
+      "label": "Window size",
+      "group": "Display",
+      "help": "The size the game's window opens at.",
+      "choices": [
+        { "label": "1280 x 720", "set": { "windowSize": "\"\"" } },
+        { "label": "1600 x 900", "set": { "windowSize": "\"1600x900\"" } },
+        { "label": "1920 x 1080", "set": { "windowSize": "\"1920x1080\"" } },
+        { "label": "2560 x 1440", "set": { "windowSize": "\"2560x1440\"" } },
+        { "label": "3840 x 2160", "set": { "windowSize": "\"3840x2160\"" } }
+      ],
+      "defaults": { "windowSize": "\"\"" },
+      "when": { "windowMode": "\"windowed\"" }
+    },
+    {
+      "id": "vsync",
+      "label": "V-Sync",
+      "group": "Display",
+      "help": "On waits for the screen's refresh: no tearing.",
+      "choices": [
+        { "label": "On", "set": { "vsync": "true" } },
+        { "label": "Off", "set": { "vsync": "false" } }
+      ],
+      "defaults": { "vsync": "true" }
+    },
+    {
+      "id": "res_scale",
+      "label": "Resolution",
+      "group": "Picture",
+      "help": "What the game draws at. 720p is the PS3's own; higher is sharper and needs a faster Mac. Experimental.",
+      "choices": [
+        { "label": "720p (PS3)", "set": { "resScale": "\"\"" } },
+        { "label": "1080p", "set": { "resScale": "\"1.5\"" } },
+        { "label": "1440p", "set": { "resScale": "\"2\"" } },
+        { "label": "4K", "set": { "resScale": "\"3\"" } }
+      ],
+      "defaults": { "resScale": "\"\"" }
+    },
+    {
+      "id": "upscale",
+      "label": "Upscaling",
+      "group": "Picture",
+      "help": "How the picture is fitted to the window. MetalFX is Apple's upscaler (macOS 13 or newer).",
+      "choices": [
+        { "label": "Plain", "set": { "upscale": "\"\"" } },
+        { "label": "MetalFX", "set": { "upscale": "\"metalfx\"" } }
+      ],
+      "defaults": { "upscale": "\"\"" }
+    },
+    {
+      "id": "aa",
+      "label": "Anti-aliasing",
+      "group": "Picture",
+      "help": "Smooths jagged edges, the pitch lines most of all.",
+      "choices": [
+        { "label": "Off", "set": { "aa": "\"\"" } },
+        { "label": "FXAA", "set": { "aa": "\"fxaa\"" } }
+      ],
+      "defaults": { "aa": "\"\"" }
+    },
+    {
+      "id": "aniso",
+      "label": "Texture filtering",
+      "group": "Picture",
+      "help": "Keeps the pitch markings and the stands sharp at shallow angles.",
+      "choices": [
+        { "label": "Off", "set": { "aniso": "0" } },
+        { "label": "2x", "set": { "aniso": "2" } },
+        { "label": "4x", "set": { "aniso": "4" } },
+        { "label": "8x", "set": { "aniso": "8" } },
+        { "label": "16x", "set": { "aniso": "16" } }
+      ],
+      "defaults": { "aniso": "16" }
+    },
+    {
+      "id": "sharpen",
+      "label": "Sharpening",
+      "group": "Picture",
+      "help": "0 is off.",
+      "slider": { "key": "sharpen", "min": 0, "max": 1, "step": 0.05, "format": "%.2f" },
+      "defaults": { "sharpen": "0.0" }
+    },
+    {
+      "id": "game_lang",
+      "label": "Console language",
+      "group": "Sound and system",
+      "help": "The language the PS3 tells the game. The game's own Portuguese labels are the default; the first start's setup still asks for the game's language.",
+      "choices": [
+        { "label": "Game's default", "set": { "gameLang": "\"\"" } },
+        { "label": "Portuguese (Brazil)", "set": { "gameLang": "\"pt-br\"" } },
+        { "label": "English (US)", "set": { "gameLang": "\"en-us\"" } },
+        { "label": "Spanish", "set": { "gameLang": "\"es\"" } }
+      ],
+      "defaults": { "gameLang": "\"\"" }
+    },
+    {
+      "id": "volume",
+      "label": "Volume",
+      "group": "Sound and system",
+      "help": "The game's sound, in percent.",
+      "slider": { "key": "audioVolume", "min": 0, "max": 100, "step": 5, "format": "%d" },
+      "defaults": { "audioVolume": "100" }
+    },
+    {
+      "id": "show_fps",
+      "label": "Show FPS",
+      "group": "Sound and system",
+      "help": "The frame rate and frame times in the window's title.",
+      "choices": [
+        { "label": "Off", "set": { "showFps": "false" } },
+        { "label": "On", "set": { "showFps": "true" } }
+      ],
+      "defaults": { "showFps": "false" }
+    },
+    {
+      "id": "keep_awake",
+      "label": "Keep the Mac awake",
+      "group": "Sound and system",
+      "help": "The Mac doesn't go to sleep while the game runs.",
+      "choices": [
+        { "label": "On", "set": { "keepAwake": "true" } },
+        { "label": "Off", "set": { "keepAwake": "false" } }
+      ],
+      "defaults": { "keepAwake": "true" }
+    }
+  ],
+  "saves": [
+    "{home}/Library/Application Support/pes13-recomp/port/rpcs3/dev_hdd0/home/00000001/savedata",
+    "{home}/Library/Application Support/pes13-recomp/profiles",
+    "{home}/Library/Application Support/pes13-recomp/input.toml"
+  ],
+  "folders": {
+    "saves": [{ "path": "{home}/Library/Application Support/pes13-recomp/port/rpcs3/dev_hdd0/home/00000001/savedata" }],
+    "profiles": [{ "path": "{home}/Library/Application Support/pes13-recomp/profiles" }],
+    "logs": [{ "path": "{home}/Library/Application Support/pes13-recomp" }],
+    "shaders": [{ "path": "{home}/Library/Application Support/pes13-recomp/port/cache" }]
+  },
+  "actions": [
+    { "id": "saves", "label": "Saves", "help": "The saves of the default profile, as the game writes them (BLUS31029...).", "open": "saves" },
+    { "id": "profiles", "label": "Option File profiles", "help": "The Option File profiles made in the PES 2013 Launcher window (its Option File page picks the one Play uses).", "open": "profiles" },
+    { "id": "logs", "label": "Logs", "help": "last.log (the last session), install.log (the last setup) and logs/ with the sessions before.", "open": "logs" },
+    { "id": "shaders", "label": "Shader cache", "help": "Shaders the game has translated, so later matches don't stutter. Clearing only helps if the picture looks wrong after an update.", "clear": "shaders/msl" }
+  ],
+  "exit_codes": {
+    "0": "ok",
+    "40": "Your copy isn't the one this port reads: it needs your own PES 2013 US disc, BLUS31029, as a decrypted disc image (.iso) or a folder with PS3_GAME and PS3_DISC.SFB, and its 01.04 update (.pkg). Pick them again on the game's page.",
+    "41": "Your Mac needs something first: Apple's Command Line Tools (their installer opened: finish it), Homebrew's cmake, ninja, sdl2 and python@3.12, or the key file that decrypts the game (never shipped: add it once in the PES 2013 Launcher window, Home > Install the game). Then set the game up again.",
+    "42": "Couldn't download what the build needs (the toolkit from GitHub or its Python packages). Check the internet connection and set the game up again.",
+    "43": "Building the game failed. Check there are about 10 GB free, then set it up again: it continues where it stopped. install.log in the logs folder says why.",
+    "44": "PES 2013 is already running, or another setup of it is. Close it or wait for it, then try again.",
+    "45": "The game isn't built yet. Set it up again on the game's page (the first time takes 30 to 60 minutes).",
+    "46": "The PES 2013 launcher couldn't start it. Open the launcher itself to see why."
+  }
+}
