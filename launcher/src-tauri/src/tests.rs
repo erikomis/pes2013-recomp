@@ -644,3 +644,15 @@ fn installed_port_environment() {
     assert_eq!(venv_python(&p), install_layout().venv().join("bin/python"));
     fs::remove_dir_all(&d).unwrap();
 }
+
+#[test]
+fn audio_outputs_from_system_profiler() {
+    let json = r#"{"SPAudioDataType":[{"_items":[
+        {"_name":"Alto-falantes (MacBook Pro)","coreaudio_device_output":2},
+        {"_name":"Microfone (MacBook Pro)","coreaudio_device_input":1},
+        {"_name":"LG TV","coreaudio_device_output":2,"coreaudio_default_audio_output_device":"spaudio_yes"},
+        {"_name":"DualSense Wireless Controller","coreaudio_device_output":4},
+        {"_name":"DualSense Wireless Controller","coreaudio_device_input":2}]}]}"#;
+    assert_eq!(parse_audio_outputs(json), vec!["LG TV", "Alto-falantes (MacBook Pro)", "DualSense Wireless Controller"]);
+    assert!(parse_audio_outputs("not json").is_empty());
+}

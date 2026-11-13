@@ -239,6 +239,7 @@ function showView(view: string, tab?: string) {
   if (view === "game") {
     refreshDisc();
     refreshSaves();
+    refreshAudioOutputs();
     refreshTrophies();
   }
   if (view === "optionfile") refreshProfiles();
@@ -446,6 +447,23 @@ function fillScreens() {
   sel.value = cur;
 }
 
+// ---- sound outputs (PS3_AUDIO_DEVICE) ---------------------------------------------
+let audioOutputs: string[] = [];
+async function refreshAudioOutputs() {
+  audioOutputs = await invoke<string[]>("list_audio_outputs").catch(() => []);
+  fillAudioOutputs();
+}
+/** The system's default output, the ones the Mac has now, and the saved one
+ * when it is not connected. */
+function fillAudioOutputs() {
+  const sel = $<HTMLSelectElement>("audio-device");
+  sel.replaceChildren(new Option(t("settings.audioDeviceDefault"), ""));
+  for (const n of audioOutputs) sel.append(new Option(n, n));
+  const cur = settings.audioDevice;
+  if (cur && !audioOutputs.includes(cur)) sel.append(new Option(t("settings.screenMissing", { name: cur }), cur));
+  sel.value = cur;
+}
+
 // ---- what the build supports ------------------------------------------------------
 /** A control whose variable the build does not read says so and is disabled:
  * `data-feature` names the variable, or several as A|B when any of them will do.
@@ -578,7 +596,7 @@ function bindSettings() {
   bindText("ffmpeg-avcodec", "ffmpegAvcodec");
   bindText("ffmpeg-avutil", "ffmpegAvutil");
   bindText("extra-env", "extraEnv");
-  bindText("audio-device", "audioDevice");
+  bindSelect("audio-device", "audioDevice");
   syncers.push(syncPreset);
   syncPreset();
   $("preset").addEventListener("change", () => {
@@ -756,6 +774,7 @@ function applyLang(l: Lang) {
   renderTrophies();
   renderMods();
   fillScreens();
+  fillAudioOutputs();
   renderFeatures();
   renderSaves();
   renderReport();
