@@ -257,6 +257,28 @@ index a44d398a..3a5d8b6f 100644
          }
          blocks++;
          audio_mix_one_block();
+diff --git a/libs/misc/cellAvconfExt.c b/libs/misc/cellAvconfExt.c
+index 2ab88b8e..fccb6fd3 100644
+--- a/libs/misc/cellAvconfExt.c
++++ b/libs/misc/cellAvconfExt.c
+@@ -179,6 +179,17 @@ s32 cellVideoOutGetGamma(u32 videoOut, float* gamma)
+     return CELL_OK;
+ }
+ 
++/* The screen's size in inches, which 3D titles use for depth. A console only
++ * knows it when the player entered it under the 3D display settings, and with
++ * nothing entered it answers VALUE_IS_NOT_SET; that is the honest answer here.
++ * PES 2013 asks once at boot. */
++s32 cellVideoOutGetScreenSize(u32 videoOut, float* screenSize)
++{
++    if (!screenSize) return (s32)0x8002b222;          /* ILLEGAL_PARAMETER */
++    if (videoOut != 0) return (s32)0x8002b225;        /* UNSUPPORTED_VIDEO_OUT */
++    return (s32)0x8002b228;                           /* VALUE_IS_NOT_SET */
++}
++
+ s32 cellVideoOutSetGamma(u32 videoOut, float gamma)
+ {
+     (void)videoOut;
 diff --git a/libs/misc/cellOskDialog.c b/libs/misc/cellOskDialog.c
 index 17e7c674..be79549c 100644
 --- a/libs/misc/cellOskDialog.c
@@ -6011,6 +6033,48 @@ index 70bb3a44..24491664 100644
      g_active_ctx = saved_active;
      return ctx.gpr[3];
  }
+diff --git a/runtime/ppu/ppu_sysprx.cpp b/runtime/ppu/ppu_sysprx.cpp
+index 1a393fde..4cc8af91 100644
+--- a/runtime/ppu/ppu_sysprx.cpp
++++ b/runtime/ppu/ppu_sysprx.cpp
+@@ -541,6 +541,29 @@ static void hle_net_wouldblock(ppu_context* ctx)
+     ctx->gpr[3] = (uint64_t)(int64_t)(int32_t)-1;
+ }
+ static void hle_net_zero(ppu_context* ctx) { ctx->gpr[3] = 0; }
++/* inet_addr: a dotted quad to an address in network order (the PPC's own
++ * order, so a.b.c.d is the value a<<24|b<<16|c<<8|d); anything else is
++ * INADDR_NONE. Pure arithmetic, so it needs no network. */
++static void hle_net_inet_addr(ppu_context* ctx)
++{
++    const uint32_t ea = (uint32_t)ctx->gpr[3];
++    uint32_t parts[4] = {0, 0, 0, 0};
++    int n = 0, digits = 0, ok = ea != 0;
++    for (uint32_t i = 0; ok && i < 64; i++) {
++        const char c = (char)vm_read8(ea + i);
++        if (c >= '0' && c <= '9') {
++            parts[n] = parts[n] * 10 + (uint32_t)(c - '0');
++            ok = ++digits <= 3 && parts[n] <= 255;
++        } else if (c == '.' && digits && n < 3) {
++            n++; digits = 0;
++        } else {
++            ok = c == 0 && digits && n == 3;
++            break;
++        }
++    }
++    ctx->gpr[3] = ok ? (uint64_t)((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3])
++                     : 0xFFFFFFFFull;
++}
+ /* select/poll: nothing is ever ready offline -- but a real select BLOCKS for
+  * the caller's timeout before saying so. Returning instantly turned LBP's
+  * 30Hz net pump (sub_3A5548: select(1, r/w/e sets, {0s, 33333us})) into a
+@@ -879,6 +902,7 @@ extern "C" void ppu_sysprx_register(void)
+     ps3_hle_register_ctx(0x9647570Bu, "netSendTo",              hle_net_sendto);
+     ps3_hle_register_ctx(0x6DB6E8CDu, "netClose",               hle_net_zero);
+     ps3_hle_register_ctx(0x71F4C717u, "netGetHostByName",       hle_net_zero);   /* NULL: DNS down */
++    ps3_hle_register_ctx(0xDABBC2C0u, "inet_addr",              hle_net_inet_addr);
+     ps3_hle_register_ctx(0xB68D5625u, "netFinalizeNetwork",     hle_net_zero);
+     ps3_hle_register_ctx(0xFDB8F926u, "netFreethreadContext",   hle_net_zero);
+     /* Route the GCM command-buffer-full callback (invoked indirectly via the
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
 index 705ecc83..2b0e2525 100644
 --- a/runtime/spu/spu_channels.c

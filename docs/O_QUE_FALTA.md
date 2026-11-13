@@ -104,8 +104,9 @@ em janela e com teclado: um amistoso jogado até o fim.
       ficam em `WAIT_SIGNAL`; não está provado que decodifiquem.
 - [x] **Controle:** teclado (Enter = START, Espaço = CROSS) e DualSense pelo SDL. Falta
       mapear o esquema inteiro de controle do PES no launcher.
-- [ ] **Funções sem implementação:** restam `inet_addr` (`0xDABBC2C0`) e
-      `cellSysutilAvconfExt` (`0xFAA275A4`), uma chamada cada no boot; parecem inofensivas.
+- [x] **Funções sem implementação:** nenhuma no boot desde 13/11/2026. As últimas foram
+      `inet_addr` (`0xDABBC2C0`, agora converte o IP de texto) e `cellVideoOutGetScreenSize`
+      (`0xFAA275A4`, responde "tamanho não informado", como um PS3 sem os dados de TV 3D).
       Feito em 11/11/2026: `0x05C65656` era `sys_mempool_try_allocate_block` (38 chamadas na
       inicialização, todas recebiam 0); agora entrega blocos de verdade, junto com
       `sys_mempool_free_block`. Com isso o jogo passou a ligar a trilha sonora personalizada
@@ -153,7 +154,7 @@ Preparação parcial; itens abaixo ainda não concluídos:
       - [x] Nomes de 2026 nos 20 estádios do criador de estádios.
       - [x] Cartas do eFootball 2026: 977 aplicadas (11/11/2026, os 89 clubes pesquisados; escalações refeitas); os outros 1.288 não têm carta e usam um modelo por
             posição.
-      - [x] Rostos 2026: 93 no Editar, 87 na partida (11/11/2026). Faltam 6 na partida, as 23
+      - [x] Rostos 2026: 97 no Editar, 93 na partida (13/11/2026). Faltam 4 na partida, as 23
             faces ligadas sem chave e os 54 arquivos sem jogador de 2026.
       - [ ] Uniformes dos clubes estrangeiros: nenhuma fonte de 2026 encontrada.
       - [ ] Uma partida, a Master League e uma Libertadores jogadas com o perfil.
