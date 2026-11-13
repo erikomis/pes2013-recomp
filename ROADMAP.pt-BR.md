@@ -77,8 +77,9 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 
 ### Vídeo
 
-- [ ] Vídeos `.sfd` (fundo do menu, abertura): tocam, mas a decodificação não
-  está provada para todos.
+- [ ] Vídeos `.sfd`: a abertura (`pes12ci.sfd`, a animação com a logo do PES) e o fundo do
+  menu (`pes_topBG_*`) decodificam: quadros gravados a cada 2 s mudam (13/11/2026). Faltam as
+  aberturas das competições (`pes13cl_*`, `pes13el_*`, `pes13lb_*`), que tocam ao entrar nelas.
 
 ---
 

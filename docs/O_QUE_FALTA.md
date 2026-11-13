@@ -100,8 +100,9 @@ em janela e com teclado: um amistoso jogado até o fim.
 
 ## 2. Para o menu ficar utilizável
 
-- [ ] **Vídeos `.sfd`:** o fundo do menu usa `pes_topBG_*.sfd`. As tarefas de vídeo
-      ficam em `WAIT_SIGNAL`; não está provado que decodifiquem.
+- [ ] **Vídeos `.sfd`:** a abertura (`pes12ci.sfd`) e o fundo do menu (`pes_topBG_*.sfd`)
+      decodificam: quadros gravados a cada 2 s mudam (13/11/2026). Faltam as aberturas das
+      competições (`pes13cl_*`, `pes13el_*`, `pes13lb_*`).
 - [x] **Controle:** teclado (Enter = START, Espaço = CROSS) e DualSense pelo SDL. Falta
       mapear o esquema inteiro de controle do PES no launcher.
 - [x] **Funções sem implementação:** nenhuma no boot desde 13/11/2026. As últimas foram

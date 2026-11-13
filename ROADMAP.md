@@ -77,8 +77,9 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 
 ### Video
 
-- [ ] `.sfd` movies (menu background, intro): play, but decoding is not proven
-  for every one.
+- [ ] `.sfd` movies: the opening (`pes12ci.sfd`, the PES logo animation) and the menu background
+  (`pes_topBG_*`) decode: frames recorded 2 s apart change (2026-11-13). The competitions' openings
+  (`pes13cl_*`, `pes13el_*`, `pes13lb_*`), played when entering them, are not checked.
 
 ---
 
