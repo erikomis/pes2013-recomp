@@ -145,11 +145,11 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 - [x] Tauri app adapted from the Resistance 2 launcher, with inFAMOUS 2 extras.
 - [x] Option File profiles (default tree, copies, PS3 save folders, .zip).
 - [x] Honest settings: a control whose variable is not in the build says so.
-- [ ] First launch of the game from the app, in a window.
+- [x] First launch of the game from the app, in a window (sessions from 2026-11-06 to 11-08 in the launcher logs).
 - [ ] Release `.dmg`, install and rebuild from the app.
 - [ ] RecompLauncher: the profile (`recomplauncher.json`), the launcher's
   headless `--prepare` / `--play` and `scripts/package-recomplauncher.sh` are
-  in; a release with that zip attached, a full prepare on a clean Mac, and the
+  in, and release v0.1.0 carries that zip; a full prepare on a clean Mac and the
   listing on recomplauncher.com are still to do (launcher README,
   "RecompLauncher").
 

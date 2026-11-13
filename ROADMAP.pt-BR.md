@@ -145,11 +145,11 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 - [x] App Tauri adaptado do launcher do Resistance 2, com extras do inFAMOUS 2.
 - [x] Perfis de Option File (árvore padrão, cópias, pastas de save do PS3, .zip).
 - [x] Ajustes honestos: um controle cuja variável não está na build avisa isso.
-- [ ] Primeira abertura do jogo pelo app, em janela.
+- [x] Primeira abertura do jogo pelo app, em janela (sessões de 06 a 08/11/2026 nos logs do launcher).
 - [ ] `.dmg` de release, instalar e recompilar pelo app.
 - [ ] RecompLauncher: o perfil (`recomplauncher.json`), o `--prepare` /
   `--play` sem janela do launcher e o `scripts/package-recomplauncher.sh` já
-  estão aqui; falta uma release com esse zip, um prepare completo num Mac limpo
+  estão aqui, e a release v0.1.0 tem esse zip; falta um prepare completo num Mac limpo
   e a listagem no recomplauncher.com (README do launcher, "RecompLauncher").
 
 ### Outras plataformas

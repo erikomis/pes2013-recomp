@@ -128,7 +128,8 @@ em janela e com teclado: um amistoso jogado até o fim.
       Estrelato dependem disso. As opções são gravadas em
       `rpcs3/dev_hdd0/home/00000001/savedata` e foram lidas de volta em um boot seguinte.
       Saves de jogo ainda não foram testados.
-- [ ] **Rede e troféus:** devem funcionar offline, sem travar. Não testado.
+- [x] **Rede e troféus:** testado sem internet em 11/11/2026: Comunidade Online volta ao menu sem
+      travar; os troféus iniciam e carregam o arquivo salvo. Desbloquear um troféu não foi testado.
 - [x] **Partida completa:** seleção de times → carregamento → partida → intervalo
       → fim. Um amistoso foi jogado até o fim em janela.
 
