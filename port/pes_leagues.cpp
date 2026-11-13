@@ -161,7 +161,8 @@ void func_00D4ED6C(ppu_context* ctx)
  * function copies the game's descriptor, then, for the ten leagues and once the
  * EDIT data is loaded (the byte after the table), points the list at the league's
  * range of the EDIT table. The count is the game's own; for Série B in the 20-club
- * layout it becomes the clubs actually there. */
+ * layout it becomes the clubs actually there, and for the European clubs league too
+ * when the save holds more than the game's count. */
 void func_00D7D200(ppu_context* ctx)
 {
     const uint32_t base = (uint32_t)ctx->gpr[3];
@@ -202,6 +203,11 @@ void func_00D7D200(ppu_context* ctx)
     const Range r = league_range(table, league);
     const uint32_t at = table + 2 * r.start;
     vm_write32(out + 4, at);
-    if (league == 7 && b20_layout(table)) vm_write32(out, clubs_in(table, r));
+    /* Série B, and the European clubs league when a save puts more clubs there than
+     * the game's 24 (a club added for a custom cup): the count is the clubs there. */
+    if (b20_layout(table)) {
+        if (league == 7) vm_write32(out, clubs_in(table, r));
+        if (league == 9 && clubs_in(table, r) > vm_read32(out)) vm_write32(out, clubs_in(table, r));
+    }
     ctx->gpr[3] = at;
 }

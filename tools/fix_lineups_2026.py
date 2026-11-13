@@ -119,6 +119,7 @@ def main():
     orosters = {r["team_id"]: r for r in orig["rosters"]}
     rosters = {r["team_id"]: r for r in cur["rosters"]}
     where = lineup_offsets(data)
+    owhere = lineup_offsets(od)
 
     def pos_of(buf, plist, pid):
         return buf[plist[pid]["offset"] + 121] & 15
@@ -155,10 +156,13 @@ def main():
         old = list(data[at:at + 32])
         members = {m["slot"]: m["player_id"] for m in rosters[tid]["members"]}
         omembers = {m["slot"]: m["player_id"] for m in orosters.get(tid, {"members": []})["members"]}
-        # roles of the eleven formation positions, from the stock line-up
+        # roles of the eleven formation positions, from the stock line-up: the
+        # ORIGINAL file's array, so running this again on its own output gives the
+        # same result (the current array has been rewritten already)
+        stock = list(od[owhere[tid]:owhere[tid] + 32]) if tid in owhere else old
         roles = []
         for k in range(11):
-            pid = omembers.get(old[k])
+            pid = omembers.get(stock[k])
             roles.append(pos_of(od, oplayers, pid) if pid in oplayers else (0 if k == 0 else 6))
         ranked = sorted(members.items(), key=lambda sp: score.get(sp[1], (0, 0)), reverse=True)
         keepers = [sp for sp in ranked if pos_of(data, players, sp[1]) == 0]

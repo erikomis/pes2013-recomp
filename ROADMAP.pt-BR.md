@@ -89,7 +89,9 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 
 ### Gráficos e resolução
 
-- [x] Resolução interna 1080p / 1440p / 4K (`PS3_RES_SCALE`), na build; o fps de cada degrau ainda não foi medido
+- [x] Resolução interna 1080p / 1440p / 4K (`PS3_RES_SCALE`): cerca de 59 fps em jogo em 1x, 1,5x e 2x (sem janela)
+- [x] Supersampling: imagem interna maior que a janela reduzida para ela com filtro Lanczos
+  (`PS3_DOWNSCALE`, ligado por padrão; 2560x1440 para 1920x1080 visto em janela)
 - [x] Gramado HD: os dois gramados vistos nas partidas em 4096x2048 com grão de grama (`gramado-hd`, visto em 2560x1440).
 - [x] Rostos HD: rostos de 2026 em 512x1024 ou 1024x2048 (`faces-2026`, 63 jogadores).
 - [ ] HD dos gramados dos outros estádios, da bola, da torcida e das placas.
@@ -129,20 +131,26 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
   1.288 não têm carta no eFootball (a maioria da Série B) e usam um modelo por posição.
 - [x] Rostos reais de 2026 como pacote de texturas: 97 jogadores de 17 clubes, com 2 a 4
   vezes a resolução do PS3. Os 97 no Editar (chaves recapturadas em 07/11/2026 e conferidas
-  na tela no Flamengo); 93 de 97 na partida (13/11/2026), com chaves tiradas de amistosos automáticos com os
+  na tela no Flamengo); 95 de 97 na partida (13/11/2026), com chaves tiradas de amistosos automáticos com os
   reservas escalados (11/11/2026). Alguns rostos mudam de bytes de uma execução para outra; o
   pacote leva cada variante vista (chaves alternativas).
-- [ ] Os últimos 4 rostos na partida (Marçal e Allan: o rosto da partida não pareia com nenhum
-  do Editar; Felipe Anderson e Khellven: o Palmeiras não tem registro
-  de escalação, então não dá para pô-los de titulares), as 23 faces ligadas sem chave e os 54 arquivos sem jogador de 2026.
+- [ ] Os últimos 2 rostos na partida (Marçal e Allan: o rosto da partida não pareia com nenhum
+  do Editar). Felipe Anderson e Khellven ganharam a chave em 13/11/2026, escalados no Flamengo
+  numa cópia do save. 14 faces ligadas não carregam textura própria no Editar, nem depois de um
+  segundo rosto especial livre (Arthur Dias, Gabriel Delfim, Jean Lucas, Everaldo...); 3 arquivos
+  baixados não têm textura de rosto aproveitável. Dos 54 arquivos sem jogador de 2026, 4 agora
+  batem por clube e nome (Dudu, Danilo, Nacho Sosa, Isidro Pitta) e esperam o mesmo problema do
+  Editar.
 - [x] Os 20 estádios do criador de estádios com nomes de 2026 (todo clube da Série A tem
   o nome do seu estádio); só os nomes, a aparência fica.
 - [ ] Uniformes dos clubes estrangeiros: nenhuma fonte de 2026 encontrada.
 - [ ] Estádios 3D novos (Bombonera, Allianz Parque...): exigiriam converter o modelo
   inteiro; o jogo só tem Maracanã, Morumbi, Vila Belmiro e o Monumental.
 - [ ] Uma partida, a Master League e uma Libertadores jogadas com o perfil.
-- [ ] Copa do Brasil: o jogo não tem essa competição e o Option File não tem vagas
-  para os 126 clubes; só uma copa personalizada com os clubes que existem.
+- [x] Copa do Brasil 2026 como Copa KONAMI com os 32 clubes da 5ª fase: os 4 que
+  não estão nas Séries A/B (Confiança, Jacuipense, Paysandu, Barra-SC) em vagas
+  livres, com elencos das súmulas da CBF, rostos genéricos e escudos (13/11/2026).
+  A copa é criada pelo jogador no jogo; ainda não jogada até o fim.
 - [ ] Narração em português do Brasil: inventariada, não substituída.
 
 ### App para instalar e jogar (launcher)

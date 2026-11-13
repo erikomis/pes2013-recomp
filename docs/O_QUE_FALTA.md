@@ -31,6 +31,11 @@ Fecha com `Ctrl+C`.
       1x = 59,2 fps (p95 23,8 ms), 1,5x = 59,1 fps (p95 20,1 ms), 2x (1440p) = 58,4 fps
       (p95 19,1 ms); os replays ficam a 30 em todas, pelo próprio jogo. A escala não custa
       nada mensurável aqui. Em janela não foi medido.
+- [x] **Supersampling (`PS3_DOWNSCALE`):** quando a resolução interna passa do tamanho da
+      janela, cada quadro é reduzido para ela com filtro Lanczos (MetalPerformanceShaders), em
+      vez de a janela só amostrar a imagem maior. Ligado por padrão, `PS3_DOWNSCALE=0` desliga.
+      Visto em janela em 13/11/2026: 2560x1440 reduzido para 1920x1080. Teste:
+      `test_metal_downscale` (um xadrez de 1 pixel reduzido 3x sai cinza uniforme).
 - [ ] **Desempenho em janela:** sem janela e com a máquina livre, a partida faz 60,0 fps (p95
       17,6 ms) e os replays 30,0 fps, com cerca de 133% de CPU (antes, cerca de 18 fps e 414%).
       Falta medir em janela, com a build final, e verificar travadinhas. A captura
@@ -159,12 +164,15 @@ Preparação parcial; itens abaixo ainda não concluídos:
       - [x] Nomes de 2026 nos 20 estádios do criador de estádios.
       - [x] Cartas do eFootball 2026: 977 aplicadas (11/11/2026, os 89 clubes pesquisados; escalações refeitas); os outros 1.288 não têm carta e usam um modelo por
             posição.
-      - [x] Rostos 2026: 97 no Editar, 93 na partida (13/11/2026). Faltam 4 na partida, as 23
-            faces ligadas sem chave e os 54 arquivos sem jogador de 2026.
+      - [x] Rostos 2026: 97 no Editar, 95 na partida (13/11/2026). Faltam Marçal e Allan na
+            partida; 14 faces ligadas não carregam textura própria no Editar (duas trocas de
+            rosto tentadas); 3 arquivos sem textura aproveitável; dos 54 sem jogador, 4 batem por
+            clube e nome e esperam o mesmo problema.
       - [ ] Uniformes dos clubes estrangeiros: nenhuma fonte de 2026 encontrada.
       - [ ] Uma partida, a Master League e uma Libertadores jogadas com o perfil.
-      - [ ] Copa do Brasil: o jogo não tem a competição nem vagas para 126 clubes; só
-            uma copa personalizada com os clubes que existem.
+      - [x] Copa do Brasil 2026: Copa KONAMI com os 32 clubes da 5ª fase; os 4 de fora das
+            Séries A/B com elenco das súmulas, rosto genérico e escudo (13/11/2026). Falta
+            jogar a copa até o fim.
       - [ ] Narração em português do Brasil: inventariada, não substituída.
 - [ ] M8: presets de desempenho (a otimização de compilação já foi feita)
 - [ ] M9: launcher e distribuição sem dados do jogo. O app já instala e recompila o jogo

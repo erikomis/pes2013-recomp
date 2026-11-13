@@ -89,7 +89,9 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 
 ### Graphics and resolution
 
-- [x] Internal resolution 1080p / 1440p / 4K (`PS3_RES_SCALE`), in the build; frame rate per step not measured yet
+- [x] Internal resolution 1080p / 1440p / 4K (`PS3_RES_SCALE`): about 59 fps in play at 1x, 1.5x and 2x (headless)
+- [x] Supersampling: an internal picture larger than the window is reduced into it with a
+  Lanczos filter (`PS3_DOWNSCALE`, on by default; 2560x1440 into 1920x1080 seen in a window)
 - [x] HD pitch: the game's two pitches seen in matches at 4096x2048 with grass grain (`gramado-hd`, seen at 2560x1440).
 - [x] HD faces: 2026 faces at 512x1024 or 1024x2048 (`faces-2026`, 63 players).
 - [ ] HD for the pitches of the other stadiums, the ball, the crowd and ad boards.
@@ -128,12 +130,15 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
   1,288 have no card on eFootball (mostly Série B) and use a position template.
 - [x] Real 2026 faces as a texture pack: 97 players of 17 clubs, at 2-4x the PS3
   resolution. All 97 in Edit (keys recaptured on 2026-11-07 and checked on screen for
-  Flamengo); 93 of 97 in matches (2026-11-13), keyed from automatic friendlies with the bench players starting
+  Flamengo); 95 of 97 in matches (2026-11-13), keyed from automatic friendlies with the bench players starting
   (2026-11-11). Some faces come out with different bytes from run to run; the pack carries
   each variant seen (alias keys).
-- [ ] The last 4 faces in matches (Marçal, Allan: their match texture pairs with no Edit
-  face; Felipe Anderson and Khellven: Palmeiras has no line-up record,
-  so they cannot be made to start), and the 23 matched face files with no key and 54 with no 2026 player.
+- [ ] The last 2 faces in matches (Marçal, Allan: their match texture pairs with no Edit
+  face). Felipe Anderson and Khellven were keyed on 2026-11-13 by starting them for Flamengo
+  in a copy of the save. 14 linked faces get no texture of their own in Edit, even after a
+  second unused special face (Arthur Dias, Gabriel Delfim, Jean Lucas, Everaldo...); 3 source
+  files hold no usable face texture. Of the 54 files with no 2026 player, 4 are now matched
+  by club and name (Dudu, Danilo, Nacho Sosa, Isidro Pitta) and wait on the same Edit problem.
 - [x] The stadium creator's 20 stadiums renamed for 2026 (every Série A club
   has its stadium's name); only names, the looks stay.
 - [ ] Kits for the foreign clubs: no 2026 source found.
@@ -141,8 +146,10 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
   whole stadium model; the game has only Maracanã, Morumbi, Vila Belmiro and
   the Monumental.
 - [ ] A match, Master League and a Libertadores played through with the profile.
-- [ ] Copa do Brasil: the game has no such competition and the Option File has
-  no slots for its 126 clubs; only a custom cup with the clubs that exist.
+- [x] Copa do Brasil 2026 as a Copa KONAMI with the 32 clubs of the 5th round:
+  the 4 not in Séries A/B (Confiança, Jacuipense, Paysandu, Barra-SC) in unused
+  slots, with CBF match-sheet squads, generic faces and their crests (13/11/2026).
+  The cup itself is created by the player in game; not yet played through.
 - [ ] Brazilian Portuguese commentary: inventoried, not replaced.
 
 ### App to install and play (launcher)

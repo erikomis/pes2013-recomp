@@ -397,3 +397,71 @@ rosto baixado continuam com rostos genéricos.
 - Resultado: 83 dos 93 na partida (eram 41). Visto num Flamengo x Santos: 9 dos 10 titulares do
   Flamengo com rosto 2026 e 2 do Santos; o Pulgar veio com outra variante, que entrou no pacote
   depois dessa partida (não revisto).
+
+## Copa do Brasil 2026 (13/11/2026)
+
+O jogo não tem a Copa do Brasil. Ela fica como uma Copa KONAMI, a copa personalizada do jogo
+(Competição > Copa > Novo), com os 32 clubes da 5ª fase de 2026 (sorteio de 23/03/2026). Desses
+32, 28 já estavam no perfil (Séries A e B). Os outros 4 entraram em vagas que o perfil não usava:
+
+| Clube | Vaga | Antes | Aparece em |
+|---|---|---|---|
+| Confiança (SE) | 2367 | Beira-Mar | Liga ZON Sagres |
+| Jacuipense (BA) | 2368 | Olhanense | Liga ZON Sagres |
+| Paysandu (PA) | 2388 | Moreirense | Liga ZON Sagres |
+| Barra (SC) | 2515 | clube genérico, fora de qualquer liga | Outros Times (Europa), 25º |
+
+- `tools/add_cup_clubs_2026.py` (lista em `cup_clubs.json` do perfil). Para cada clube: nome e
+  sigla em todas as línguas, e o elenco das súmulas da CBF de 2026
+  (`domestic_squad_candidates.json`): quem mais jogou e foi titular primeiro, até 3 goleiros,
+  limitado ao tamanho do elenco da vaga (24 a 27 jogadores). Cada jogador usa um registro que já
+  existia na vaga: nome, nome na camisa sem acento, número, posição de goleiro, nacionalidade
+  brasileira. Dois jogadores com o mesmo nome recebem o último sobrenome do registro.
+- Rostos: nenhum desses jogadores tem rosto 2026, então cada um recebe um rosto genérico dos
+  jogadores fictícios do Option File original (times genéricos e da Master League), primeiro os
+  que ninguém usa. Nunca um rosto de jogador famoso.
+- Habilidades e posições: `set_player_stats_2026.py` trata esses clubes como `division_reference`
+  "C" (modelo por posição, nível -7). Escalação titular: `fix_lineups_2026.py`, pelos titulares das
+  súmulas, como nos outros clubes.
+- `fix_lineups_2026.py` agora pode ser rodado de novo: as funções de cada posição vêm da escalação
+  do arquivo original, não da já reescrita. A segunda execução tinha mudado o XI do Flamengo; ele
+  voltou ao aprovado.
+- Barra-SC: a vaga 2515 não estava em nenhuma liga, então nenhum seletor de times a mostrava. Ela
+  foi para a liga "Outros Times (Europa)" (`league` 9 no `cup_clubs.json`, `set_leagues.py`), que
+  tem 38 vagas e usava 24. O menu tira a contagem de um descritor do próprio jogo (24), então
+  `port/pes_leagues.cpp` passa a usar o número real de clubes dessa liga quando o save tem mais que
+  24. Com 24, nada muda. EDIT anterior: `DATA.BIN.before-barra-league` (e `DATA.BIN.before-copa`).
+- Escudos: pacote `copa-do-brasil-2026` (Wikipédia/Wikimedia, 256x256), ligado no launcher. O
+  escudo genérico da vaga 2515 é montado pelo jogo e seus mipmaps mudam de uma execução para outra;
+  a chave do pacote é a do nível 0 (`textures-level0.txt` do dump), que não muda.
+- Uniformes: continuam os das vagas antigas (portugueses e genérico). Não há uniforme 2026 desses
+  4 clubes nas fontes baixadas.
+
+Visto no jogo, sem janela: Confiança, Paysandu e Jacuipense com os escudos novos na Liga ZON
+Sagres; Barra-SC como 25º clube de "Outros Times (Europa)" com o escudo novo; o logo da Copa do
+Brasil no lugar do da Copa KONAMI em Competição > Copa > Novo. Não visto: a copa criada com os 32,
+uma partida da copa.
+
+Para montar a copa no jogo: Competição > Copa > Novo > Copa KONAMI, 32 participantes, e escolher
+os 32 clubes: os de Série A e B nas suas ligas, Confiança, Paysandu e Jacuipense na Liga ZON
+Sagres, Barra-SC no fim de "Outros Times (Europa)".
+
+## Rostos na partida: Palmeiras, e os que o Editar não mostra (13/11/2026)
+
+- Felipe Anderson e Khellven: o Palmeiras não tem registro de escalação, então não dá para
+  escalá-los. Numa cópia do save os dois trocaram de lugar com dois titulares do Flamengo (só o
+  elenco; a escalação do Flamengo os pôs no time) e um amistoso Flamengo x Santos gravou as
+  texturas. A textura do rosto na partida não depende do time: `add_match_faces.py` pareou os dois
+  (diferença 91 e 49, contra 706 e 437 do segundo mais parecido). Numa segunda partida o rosto do
+  Felipe Anderson foi aplicado e o do Khellven veio numa variante nova, também acrescentada.
+  Resultado: 95 dos 97 na partida; faltam Marçal e Allan.
+- 14 jogadores com face ligada nunca carregam uma textura própria em Editar > Jogadores: Arthur
+  Dias, Gabriel Delfim, Jean Lucas, Everaldo, Lucas Monzón, Matheuzinho (2), Kaio Lima, Amuzu, Giay,
+  Gustavo Henrique, Diego Tarzia, René, Luan Cândido. A recaptura dos 9 clubes deu linhas vazias
+  de novo. Com outro rosto especial livre (`assign_unique_faces.py`, numa cópia) também não
+  carregou nos 3 clubes medidos (a captura parou com o disco cheio). Os bytes do rosto não mostram
+  um padrão que separe os que funcionam. Causa não achada.
+- Dos 54 arquivos sem jogador de 2026, 4 batem por clube e nome: Dudu Kogitski (Athletico),
+  Danilo (Botafogo), Nacho Sosa e Isidro Pitta (Bragantino). Não aplicados: os primeiros rostos
+  livres são os que falharam acima. O Caio do Grêmio (#38) não foi ligado ao "Caio Paulista": nada
+  prova que é ele.

@@ -79,7 +79,7 @@ BY_NUMBER = {"Defender": {2: "RB", 13: "RB", 22: "RB", 6: "LB", 16: "LB"},
              "Midfielder": {5: "DMF", 15: "DMF", 10: "AMF", 20: "AMF", 7: "RMF", 11: "LMF"},
              "Forward": {7: "RWF", 17: "RWF", 11: "LWF", 19: "SS"}}
 # Template level per competition, from the median of matched players.
-LEVEL = {"A": 0, "B": -4, "CONMEBOL": -1}
+LEVEL = {"A": 0, "B": -4, "C": -7, "CONMEBOL": -1}   # C: Série C/D clubs of the Copa do Brasil
 
 
 def key(s):
@@ -171,7 +171,7 @@ def main():
     todo = []  # (player id, group, pesdb row or None, info)
     man = json.loads(Path(a.manifest).read_text(encoding="utf-8"))
     for ch in man["changes"]:
-        group = "A" if ch.get("division_reference") == "A" else "B"
+        group = ch.get("division_reference") if ch.get("division_reference") in ("A", "C") else "B"
         for asg in ch["assignments"]:
             r = rows.get(("cbf", asg["cbf_id"]))
             info = dict(base.get(("cbf", asg["cbf_id"]), {}))
