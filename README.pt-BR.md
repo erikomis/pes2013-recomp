@@ -57,7 +57,7 @@ correções do toolkit feitas para os portes de inFAMOUS, Resistance e Deadpool.
 | Perfil temporada 2026: Séries A e B com 20 clubes cada, clubes da Libertadores e da Sul-Americana, nomes, elencos, uniformes, escudos | 🧪 visto sem janela nos menus e seletores; ainda sem uma partida com ele |
 | Posições e habilidades de 2026 | ✅ gravadas em todo jogador renomeado; 🧪 977 das cartas do eFootball 2026, os outros por um modelo de posição por enquanto |
 | Gramado HD (4096x2048) | 🧪 os dois gramados vistos nas partidas, num pacote de texturas (`gramado-hd`) |
-| Rostos reais de 2026 | ✅ 93 jogadores de 17 clubes num pacote de texturas, 97 no Editar, 93 na partida |
+| Rostos reais de 2026 | ✅ 97 jogadores de 17 clubes num pacote de texturas, todos no Editar, 93 na partida |
 | Fechar a janela encerra o jogo | ✅ desde 2026-11-06 (antes continuava rodando sem janela) |
 | Master League, Rumo ao Estrelato, salvar uma carreira | ❓ não testado |
 | Online, troféus | ❓ só offline, não testado |

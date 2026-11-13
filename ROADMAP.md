@@ -121,7 +121,7 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
   Edit > Players). Abilities calibrated to PES 2013's scale.
 - [x] Of those, 977 of 2,265 have their eFootball 2026 card (all 89 clubs searched, 2026-11-11); the other
   1,288 have no card on eFootball (mostly Série B) and use a position template.
-- [x] Real 2026 faces as a texture pack: 93 players of 17 clubs, at 2-4x the PS3
+- [x] Real 2026 faces as a texture pack: 97 players of 17 clubs, at 2-4x the PS3
   resolution. All 93 in Edit (keys recaptured on 2026-11-07 and checked on screen for
   Flamengo); 93 of 97 in matches (2026-11-13), keyed from automatic friendlies with the bench players starting
   (2026-11-11). Some faces come out with different bytes from run to run; the pack carries
