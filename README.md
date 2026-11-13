@@ -52,7 +52,7 @@ toolkit fixes made for the inFAMOUS, Resistance and Deadpool ports. See
 | Sound (48 kHz, game mixer) | ✅; 🧪 one frame of 0.1-0.2 s at the start of a replay still drops a few audio blocks |
 | Window modes (windowed, borderless, fullscreen), window size, screen, vsync, MetalFX | 🧪 in the build since 2026-11-05, not yet seen in a window |
 | Image filters (vibrance, contrast, vignette, grain, colour LUT) and texture packs | 🧪 in the build since 2026-11-05: unit tests and headless runs (a test pack replaced title-screen textures) |
-| Internal resolution 1080p / 1440p / 4K (`PS3_RES_SCALE`) | 🧪 in the build since 2026-11-05; frame rate at each step not measured yet. Ultrawide: ⏳ needs a projection patch |
+| Internal resolution 1080p / 1440p / 4K (`PS3_RES_SCALE`) | 🧪 about 59 fps in play at 1x, 1.5x and 2x (headless, 2026-11-13). Above the window's size the picture is reduced with a Lanczos filter (supersampling, `PS3_DOWNSCALE=0` turns it off), seen in a window on 2026-11-13. Ultrawide: ⏳ needs a projection patch |
 | The app (launcher): play, graphics, controls, Option File profiles, saves | 🧪 built; not yet tested launching the game |
 | Season 2026 profile: Série A and B with 20 clubs each, Libertadores and Sudamericana clubs, names, squads, kits, crests | 🧪 seen headless in menus and pickers; a match with it not played yet |
 | 2026 positions and abilities | ✅ written for every renamed player; 🧪 977 from eFootball 2026 cards, the rest from a position template for now |

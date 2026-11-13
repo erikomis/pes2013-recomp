@@ -52,7 +52,7 @@ correções do toolkit feitas para os portes de inFAMOUS, Resistance e Deadpool.
 | Som (48 kHz, mixer do jogo) | ✅; 🧪 um quadro de 0,1-0,2 s no início do replay ainda perde alguns blocos de áudio |
 | Modos de janela (janela, sem borda, tela cheia), tamanho, monitor, vsync, MetalFX | 🧪 na build desde 2026-11-05, ainda não vistos em janela |
 | Filtros de imagem (vibração, contraste, vinheta, granulação, LUT de cor) e pacotes de texturas | 🧪 na build desde 2026-11-05: testes de unidade e execuções sem janela (um pacote de teste trocou texturas da tela de título) |
-| Resolução interna 1080p / 1440p / 4K (`PS3_RES_SCALE`) | 🧪 na build desde 2026-11-05; o fps de cada degrau ainda não foi medido. Ultrawide: ⏳ precisa de um patch de projeção |
+| Resolução interna 1080p / 1440p / 4K (`PS3_RES_SCALE`) | 🧪 cerca de 59 fps em jogo em 1x, 1,5x e 2x (sem janela, 13/11/2026). Acima do tamanho da janela a imagem é reduzida com filtro Lanczos (supersampling; `PS3_DOWNSCALE=0` desliga), visto em janela em 13/11/2026. Ultrawide: ⏳ precisa de um patch de projeção |
 | O app (launcher): jogar, gráficos, controles, perfis de Option File, saves | 🧪 compilado; ainda não testado abrindo o jogo |
 | Perfil temporada 2026: Séries A e B com 20 clubes cada, clubes da Libertadores e da Sul-Americana, nomes, elencos, uniformes, escudos | 🧪 visto sem janela nos menus e seletores; ainda sem uma partida com ele |
 | Posições e habilidades de 2026 | ✅ gravadas em todo jogador renomeado; 🧪 977 das cartas do eFootball 2026, os outros por um modelo de posição por enquanto |
