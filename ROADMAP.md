@@ -54,7 +54,9 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 ### Game modes
 
 - [ ] Master League and Become a Legend: create, save, load, continue.
-- [ ] Saving and loading an edited Option File from inside the game.
+- [ ] Saving and loading an edited Option File from inside the game. Done on 2026-11-13,
+  headless: Edit > Save writes the whole EDIT (7.9 MB), byte for byte what the tools write, and
+  the game reads it back at every start. Not yet: saving after an edit made in the game.
 - [x] Online modes fail cleanly offline (headless, 2026-11-11): Online Community > My
   communities goes back to the menu without a message, no hang. The network dialog answers
   "connected" and the game then sees PSN offline; a "not connected" answer would let it show

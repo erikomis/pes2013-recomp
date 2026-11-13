@@ -54,7 +54,9 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 ### Modos de jogo
 
 - [ ] Master League e Rumo ao Estrelato: criar, salvar, carregar, continuar.
-- [ ] Salvar e carregar um Option File editado dentro do jogo.
+- [ ] Salvar e carregar um Option File editado dentro do jogo. Feito em 13/11/2026, sem janela:
+  Editar > Salvar grava o EDIT inteiro (7,9 MB), idêntico byte a byte ao que as ferramentas
+  geram, e o jogo o lê de volta a cada abertura. Falta salvar depois de uma edição feita no jogo.
 - [x] Modos online falham sem travar, sem internet (sem janela, 11/11/2026): Comunidade Online >
   Minhas comunidades volta ao menu sem mensagem e sem travar. O diálogo de rede responde
   "conectado" e o jogo depois vê a PSN offline; responder "sem conexão" deixaria o jogo mostrar a
