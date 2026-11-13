@@ -26,15 +26,19 @@ Fecha com `Ctrl+C`.
 - [x] **Confirmar os jogadores em janela:** um amistoso foi jogado até o fim em janela.
 - [x] **Saída limpa:** fechar a janela, Cmd-Q ou SIGTERM encerram o processo, depois de um
       save em andamento. Antes ele continuava rodando sem janela.
-- [ ] **Resolução interna (`PS3_RES_SCALE`):** está na build (1080p, 1440p, 4K); falta medir o
-      fps de cada degrau com a máquina livre.
+- [x] **Resolução interna (`PS3_RES_SCALE`):** medida em 13/11/2026, sem janela, uma partida
+      Flamengo x Santos de 120 s em cada escala, o computador jogando: nos trechos de jogo
+      1x = 59,2 fps (p95 23,8 ms), 1,5x = 59,1 fps (p95 20,1 ms), 2x (1440p) = 58,4 fps
+      (p95 19,1 ms); os replays ficam a 30 em todas, pelo próprio jogo. A escala não custa
+      nada mensurável aqui. Em janela não foi medido.
 - [ ] **Desempenho em janela:** sem janela e com a máquina livre, a partida faz 60,0 fps (p95
       17,6 ms) e os replays 30,0 fps, com cerca de 133% de CPU (antes, cerca de 18 fps e 414%).
       Falta medir em janela, com a build final, e verificar travadinhas. A captura
       `PS3RECOMP_METAL_FRAME_DUMP` tem custo: deixe de usar quando não precisar dela.
 - [ ] **Pico no início do replay:** um quadro de 112-207 ms quando começa um replay ou troca a
       cena; é onde estão os buracos de áudio que sobraram. Não é compilação de shader.
-- [ ] **Teclado virtual sem tela:** o nome do perfil é aceito automaticamente.
+- [ ] **Teclado virtual:** com janela, uma caixa do macOS pede o texto (13/11/2026); sem janela
+      ou com `PS3_OSK_TEXT`, a resposta é automática. Falta ver a caixa em janela.
 
 ### Resolvido nesta rodada (as mudanças do toolkit estão em `patches/`)
 

@@ -72,8 +72,10 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 
 - [x] Teclado (Enter = START, Espaço = CROSS) e DualSense pelo SDL.
 - [ ] Mapear todo o esquema de controle do PES no launcher e testar em janela.
-- [ ] Teclado virtual: os nomes são aceitos automaticamente (`PS3_OSK_TEXT`);
-  falta um teclado na tela.
+- [ ] Teclado virtual: com janela, quando o jogo pede um texto (o nome do perfil, de um jogador),
+  abre uma caixa do macOS com o texto inicial preenchido, e o que for digitado volta ao jogo, com
+  acentos (13/11/2026). Sem janela, ou com `PS3_OSK_TEXT`, a resposta é automática, como antes
+  (visto no assistente de primeira vez). Falta ver a caixa em janela.
 
 ### Vídeo
 

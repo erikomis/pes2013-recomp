@@ -72,8 +72,10 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 
 - [x] Keyboard (Enter = START, Space = CROSS) and DualSense through SDL.
 - [ ] Map the full PES control scheme in the launcher and test it in a window.
-- [ ] Virtual keyboard: names are accepted automatically (`PS3_OSK_TEXT`); an
-  on-screen keyboard is missing.
+- [ ] Virtual keyboard: with a window, when the game asks for text (the profile's name, a
+  player's), a macOS alert opens with the initial text filled in, and what is typed goes back to
+  the game, accents included (2026-11-13). Headless, or with `PS3_OSK_TEXT`, the answer is
+  automatic as before (seen in the first-run setup). The alert is not yet seen in a window.
 
 ### Video
 
