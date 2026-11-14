@@ -66,10 +66,29 @@ index bfa9c6db..0bc434d3 100644
  
  #if defined(_MSC_VER)
 diff --git a/libs/audio/cellAudio.c b/libs/audio/cellAudio.c
-index a44d398a..3a5d8b6f 100644
+index a44d398a..9e91c9fe 100644
 --- a/libs/audio/cellAudio.c
 +++ b/libs/audio/cellAudio.c
-@@ -182,7 +182,21 @@ static int audio_backend_init(void)
+@@ -17,6 +17,18 @@
+ #include "../../runtime/ppu/ppu_memory.h"   /* vm_base, vm_read64, vm_write32 */
+ #include <stdio.h>
+ #include <string.h>
++#ifdef __APPLE__
++/* The three Mach calls the real-time mixer thread needs, declared here: the
++ * Mach headers clash with this file's thread_t and the runtime's vm_*. */
++#include <pthread.h>
++typedef struct { unsigned int numer, denom; } ps3_mach_timebase;
++typedef struct { unsigned int period, computation, constraint; int preemptible; } ps3_mach_time_constraint;
++extern int mach_timebase_info(ps3_mach_timebase* info);
++extern unsigned int pthread_mach_thread_np(pthread_t thread);
++extern int thread_policy_set(unsigned int thread, int flavor, int* policy_info, unsigned int count);
++#define PS3_THREAD_TIME_CONSTRAINT_POLICY       2
++#define PS3_THREAD_TIME_CONSTRAINT_POLICY_COUNT 4
++#endif
+ #include <stdlib.h>
+ #include <stdint.h>
+ #include <math.h>
+@@ -182,7 +194,21 @@ static int audio_backend_init(void)
      want.samples  = CELL_AUDIO_BLOCK_SAMPLES;
      want.callback = NULL; /* We'll use SDL_QueueAudio */
  
@@ -92,7 +111,7 @@ index a44d398a..3a5d8b6f 100644
      if (s_sdl_audio_dev == 0) {
          printf("[cellAudio] SDL_OpenAudioDevice failed: %s\n", SDL_GetError());
          return -1;
-@@ -200,21 +214,58 @@ static void audio_backend_shutdown(void)
+@@ -200,21 +226,158 @@ static void audio_backend_shutdown(void)
      }
  }
  
@@ -116,6 +135,105 @@ index a44d398a..3a5d8b6f 100644
 +    return gain;
 +}
 +
++/* The DualSense's speaker (ps3_audio_controller_burst, from a port through
++ * cellPad's goal event): for a while the game's mix also goes to the
++ * controller's USB audio output (4 channels: the first two are what the
++ * speaker plays once cellPad switches it on). The device opens the first
++ * time and stays open; only a burst sends anything. No DualSense on USB: no
++ * output, said once. */
++static SDL_AudioDeviceID s_ctl_dev = 0;
++static int s_ctl_channels = 0;
++static volatile unsigned long long s_ctl_until_ms = 0;
++
++static unsigned long long audio_now_ms(void)
++{
++    struct timespec ts;
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    return (unsigned long long)ts.tv_sec * 1000ull + (unsigned long long)(ts.tv_nsec / 1000000);
++}
++
++void ps3_audio_controller_burst(unsigned ms)
++{
++    static int tried = 0;
++    if (!s_ctl_dev && !tried) {
++        tried = 1;
++        if (SDL_WasInit(SDL_INIT_AUDIO) == 0 && SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) return;
++        const char* name = NULL;
++        const int n = SDL_GetNumAudioDevices(0);
++        for (int i = 0; i < n && !name; i++) {
++            const char* d = SDL_GetAudioDeviceName(i, 0);
++            if (d && strcasestr(d, "DualSense")) name = d;
++        }
++        if (!name) { printf("[cellAudio] no DualSense audio output (the speaker needs the USB cable)\n"); return; }
++        SDL_AudioSpec want, have;
++        memset(&want, 0, sizeof want);
++        want.freq = CELL_AUDIO_SAMPLE_RATE;
++        want.format = AUDIO_F32SYS;
++        want.channels = 4;
++        want.samples = CELL_AUDIO_BLOCK_SAMPLES;
++        s_ctl_dev = SDL_OpenAudioDevice(name, 0, &want, &have, 0);
++        if (!s_ctl_dev) { printf("[cellAudio] %s: open failed: %s\n", name, SDL_GetError()); return; }
++        s_ctl_channels = have.channels;
++        SDL_PauseAudioDevice(s_ctl_dev, 0);
++        printf("[cellAudio] controller speaker output: %s, %d channels\n", name, have.channels);
++    }
++    if (s_ctl_dev) s_ctl_until_ms = audio_now_ms() + ms;
++}
++
++/* One burst: the game's mix, mono, on the speaker's two channels with the
++ * lows cut (a small speaker only distorts them), and its lows on the haptic
++ * channels (3 and 4: the DualSense's voice coils), so the controller also
++ * shakes with the crowd. It fades in over 150 ms and out over the last 600 ms,
++ * and starts with 40 ms of silence queued so the device never runs dry at the
++ * start. PS3_PAD_HAPTIC_AUDIO=0 keeps the haptic channels silent. */
++static void audio_controller_submit(const float* stereo, u32 num_samples, float gain)
++{
++    if (!s_ctl_dev) return;
++    static unsigned long long started_for = 0;
++    static float hp_x = 0, hp_y = 0, lp = 0;
++    const unsigned long long now = audio_now_ms(), until = s_ctl_until_ms;
++    if (now >= until) { started_for = 0; return; }
++    const Uint32 frame = (Uint32)(s_ctl_channels * sizeof(float));
++    float out[CELL_AUDIO_BLOCK_SAMPLES * 8];
++    if (started_for != until) {               /* a new burst */
++        started_for = until;
++        hp_x = hp_y = lp = 0;
++        SDL_ClearQueuedAudio(s_ctl_dev);
++        const u32 pre = CELL_AUDIO_SAMPLE_RATE / 25;     /* 40 ms */
++        memset(out, 0, sizeof out);
++        for (u32 k = 0; k < pre; k += CELL_AUDIO_BLOCK_SAMPLES)
++            SDL_QueueAudio(s_ctl_dev, out, CELL_AUDIO_BLOCK_SAMPLES * frame);
++    }
++    /* the speaker follows the picture: never more than about 150 ms behind */
++    if (SDL_GetQueuedAudioSize(s_ctl_dev) > (Uint32)(CELL_AUDIO_SAMPLE_RATE * 3 / 20) * frame) return;
++    static int haptic = -1;
++    if (haptic < 0) { const char* e = getenv("PS3_PAD_HAPTIC_AUDIO"); haptic = !(e && e[0] == '0'); }
++    const unsigned long long dur = 6000;
++    const unsigned long long t = dur - (until - now);           /* ms into the burst */
++    float env = 1.0f;
++    if (t < 150) env = (float)t / 150.0f;
++    if (until - now < 600) env = (float)(until - now) / 600.0f;
++    const float a_hp = 0.98f;      /* one-pole high-pass, about 150 Hz at 48 kHz */
++    const float a_lp = 0.015f;     /* one-pole low-pass, about 115 Hz */
++    while (num_samples) {
++        const u32 n = num_samples < CELL_AUDIO_BLOCK_SAMPLES ? num_samples : CELL_AUDIO_BLOCK_SAMPLES;
++        for (u32 i = 0; i < n; i++) {
++            const float m = 0.5f * (stereo[i * 2] + stereo[i * 2 + 1]) * gain * env;
++            const float y = a_hp * (hp_y + m - hp_x);
++            hp_x = m; hp_y = y;
++            lp += a_lp * (m - lp);
++            float sp = y * 1.6f, hv = haptic ? lp * 4.0f : 0.0f;
++            if (sp > 1.0f) sp = 1.0f; if (sp < -1.0f) sp = -1.0f;
++            if (hv > 1.0f) hv = 1.0f; if (hv < -1.0f) hv = -1.0f;
++            for (int c = 0; c < s_ctl_channels && c < 8; c++)
++                out[i * s_ctl_channels + c] = c < 2 ? sp : c < 4 ? hv : 0.0f;
++        }
++        SDL_QueueAudio(s_ctl_dev, out, n * frame);
++        stereo += n * 2;
++        num_samples -= n;
++    }
++}
++
  static void audio_backend_submit(const float* stereo_samples, u32 num_samples)
  {
 -    if (s_sdl_audio_dev) {
@@ -123,6 +241,7 @@ index a44d398a..3a5d8b6f 100644
 -                       num_samples * 2 * sizeof(float));
 +    if (!s_sdl_audio_dev) return;
 +    const float gain = audio_host_gain();
++    audio_controller_submit(stereo_samples, num_samples, gain);
 +    if (gain == 1.0f) {
 +        SDL_QueueAudio(s_sdl_audio_dev, stereo_samples, num_samples * 2 * sizeof(float));
 +        return;
@@ -159,7 +278,7 @@ index a44d398a..3a5d8b6f 100644
  
  /* SDL queues without bound: keep about four blocks ahead of the device, or eight
   * when the mixer may wait for a late block out of that margin. */
-@@ -222,7 +273,7 @@ static int audio_backend_room(void)
+@@ -222,7 +385,7 @@ static int audio_backend_room(void)
  {
      if (!s_sdl_audio_dev) return -1;
      return SDL_GetQueuedAudioSize(s_sdl_audio_dev) / (2 * sizeof(float)) <
@@ -168,7 +287,19 @@ index a44d398a..3a5d8b6f 100644
  }
  
  static void audio_backend_wait(void) { SDL_Delay(1); }
-@@ -574,6 +625,15 @@ static unsigned long long audio_diag_ms(void)
+@@ -418,6 +581,11 @@ static void audio_backend_wait(void)
+ 
+ #endif /* AUDIO_BACKEND_WASAPI */
+ 
++#if !AUDIO_BACKEND_SDL2
++/* The DualSense speaker output lives in the SDL backend only. */
++void ps3_audio_controller_burst(unsigned ms) { (void)ms; }
++#endif
++
+ /* ---------------------------------------------------------------------------
+  * Mixing
+  * -----------------------------------------------------------------------*/
+@@ -574,14 +742,30 @@ static unsigned long long audio_diag_ms(void)
  #endif
  }
  
@@ -184,7 +315,24 @@ index a44d398a..3a5d8b6f 100644
  #if AUDIO_BACKEND_SDL2
  /* A title's mixer that finishes its tick a few milliseconds late finds the read
   * index past its block, and FMOD then loses most of a ring. While the device still
-@@ -600,8 +660,15 @@ static int audio_late_block(void)
+  * has audio queued the mixer can wait for that block instead of playing it empty:
+- * a running port's cleared block with sound due, and no other port holding data. */
++ * a running port's cleared block with sound due, and no other port holding data.
++ * It waits only while the device holds more than half the margin. Waiting down to
++ * two blocks emptied the queue: SDL takes several blocks at a time from it, and a
++ * title whose mixer runs on the audio event (libmixer, PES 2013) cannot write the
++ * block while no event comes, so the wait always ran out, the device played
++ * nothing, and the same happened on the next block (84 gaps in 5 s as a match
++ * started, heard as crackle). */
+ static int audio_late_block(void)
+ {
+-    if (!audio_elastic() || audio_backend_queued_samples() < CELL_AUDIO_BLOCK_SAMPLES * 2)
++    if (!audio_elastic() ||
++        audio_backend_queued_samples() <= CELL_AUDIO_BLOCK_SAMPLES * (u32)audio_elastic_blocks() / 2u)
+         return 0;
+     int running = 0, ready = 0;
+     mutex_lock(&s_audio_mutex);
+@@ -600,8 +784,15 @@ static int audio_late_block(void)
  }
  #endif
  
@@ -200,7 +348,7 @@ index a44d398a..3a5d8b6f 100644
          /* AUDIO_PEAK=1: report the mixed block's peak amplitude periodically so
           * "is any port producing sound" is answerable (LBP Bink movie audio). */
          { static int _ap = -1; if (_ap < 0) _ap = getenv("AUDIO_PEAK") ? 1 : 0;
-@@ -626,6 +693,9 @@ static void audio_diag_after_submit(void)
+@@ -626,6 +817,9 @@ static void audio_diag_after_submit(void)
              { int nz = 0; for (u32 i = 0; i < CELL_AUDIO_BLOCK_SAMPLES * 2; i++) if (s_mix_buffer[i] != 0.0f) { nz = 1; break; }
                if (!nz) z++; }
              if (now - t0 >= 5000) {
@@ -210,7 +358,34 @@ index a44d398a..3a5d8b6f 100644
                  fprintf(stderr, "[audio-rate] %.1f blocks/s (real time 187.5), silent %.1f%%, dropped %.0f frames/s, device buf %u%c",
                          n * 1000.0 / (now - t0), n ? 100.0 * z / n : 0.0, (g_audio_dropped - d0) * 1000.0 / (now - t0),
                  #if AUDIO_BACKEND_WASAPI
-@@ -692,19 +762,47 @@ static void* audio_mix_thread_func(void* arg)
+@@ -686,32 +880,108 @@ static void* audio_mix_thread_func(void* arg)
+     printf("[cellAudio] Mixing thread started\n");
+ #ifdef __APPLE__
+     pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
++    /* A real-time (time constraint) thread, as Core Audio's own threads are:
++     * one block of 5.33 ms per period, about 1 ms of work in it. Interactive
++     * QoS alone still lost the CPU for tens of milliseconds while a game loads
++     * (PES 2013 entering a match: 14 gaps in 5 s with an 85 ms queue), and
++     * every lost turn emptied the device queue, a crackle. PS3_AUDIO_RT=0
++     * leaves the thread at interactive QoS. */
++    { const char* e = getenv("PS3_AUDIO_RT");
++      if (!(e && e[0] == '0')) {
++          ps3_mach_timebase tb;
++          mach_timebase_info(&tb);
++          const double ns_per_abs = (double)tb.numer / (double)tb.denom;
++          const double period_ns = CELL_AUDIO_BLOCK_SAMPLES * 1e9 / CELL_AUDIO_SAMPLE_RATE;
++          ps3_mach_time_constraint pol;
++          pol.period      = (unsigned int)(period_ns / ns_per_abs);
++          pol.computation = (unsigned int)(1.0e6 / ns_per_abs);
++          pol.constraint  = (unsigned int)(period_ns / ns_per_abs);
++          pol.preemptible = 1;
++          const int kr = thread_policy_set(pthread_mach_thread_np(pthread_self()),
++              PS3_THREAD_TIME_CONSTRAINT_POLICY, (int*)&pol, PS3_THREAD_TIME_CONSTRAINT_POLICY_COUNT);
++          printf("[cellAudio] mixing thread: real-time priority %s\n", kr == 0 ? "on" : "refused");
++      } }
+ #endif
+ 
+     /* Pace to the device clock, as the Windows loop does: one block every
       * 5.33 ms, whenever the device has room. Fixed sleeps ran at whatever rate
       * they happened to, so the title's mixer was woken unevenly and the queue
       * either ran dry or grew without bound. With no device, pace on the clock. */
@@ -224,11 +399,21 @@ index a44d398a..3a5d8b6f 100644
 +    if (room_pace < 0) { const char* e = getenv("PS3_AUDIO_ROOM_PACE"); room_pace = e && atoi(e) ? 1 : 0; }
 +    const unsigned long long period_ns = CELL_AUDIO_BLOCK_SAMPLES * 1000000000ull / CELL_AUDIO_SAMPLE_RATE;
 +    unsigned long long t0 = audio_diag_ns(), blocks = 0;
++    /* AUDIO_GAPLOG=1: for each submit that finds the device queue empty (a gap
++     * the listener hears), where the time since the previous submit went: waiting
++     * for room, waiting for a late block, waiting on the clock, mixing, notifying.
++     * First 200 gaps. */
++    static int gaplog = -1;
++    if (gaplog < 0) { const char* e = getenv("AUDIO_GAPLOG"); gaplog = e && atoi(e) ? 1 : 0; }
++    unsigned long long g_prev = audio_diag_ns(), g_room = 0, g_late = 0, g_clock = 0, g_mix = 0, g_notify = 0, g_ts = 0;
++    unsigned g_logged = 0;
      while (s_mix_thread_running) {
++        if (gaplog) g_ts = audio_diag_ns();
          const int room = audio_backend_room();
 -        if (room >= 0 && room < CELL_AUDIO_BLOCK_SAMPLES) { audio_backend_wait(); continue; }
 +        if (room >= 0 && room < CELL_AUDIO_BLOCK_SAMPLES) {
 +            audio_backend_wait();
++            if (gaplog) g_room += audio_diag_ns() - g_ts;
 +            /* the device is behind the clock: move the schedule, no burst after */
 +            if (!room_pace) {
 +                const unsigned long long now = audio_diag_ns();
@@ -237,20 +422,16 @@ index a44d398a..3a5d8b6f 100644
 +            continue;
 +        }
  #if AUDIO_BACKEND_SDL2
-         if (audio_late_block()) { usleep(500); continue; }
- #endif
--        if (room < 0) {
--            const unsigned long long now = audio_diag_ms();
--            const unsigned long long due = t0 + blocks * CELL_AUDIO_BLOCK_SAMPLES * 1000ull / CELL_AUDIO_SAMPLE_RATE;
--            if (now < due) { usleep(1000); continue; }
--            /* More than 50 ms behind: drop the backlog rather than mix a burst. */
--            if (now - due > 50) t0 = now - blocks * CELL_AUDIO_BLOCK_SAMPLES * 1000ull / CELL_AUDIO_SAMPLE_RATE;
+-        if (audio_late_block()) { usleep(500); continue; }
++        if (audio_late_block()) { usleep(500); if (gaplog) g_late += audio_diag_ns() - g_ts; continue; }
++#endif
 +        if (room < 0 || !room_pace) {
 +            const unsigned long long now = audio_diag_ns();
 +            const unsigned long long due = t0 + blocks * period_ns;
 +            if (now < due) {
 +                const unsigned long long w = (due - now) / 1000ull;
 +                usleep(w > 1000 ? 1000 : w ? (useconds_t)w : 1);
++                if (gaplog) g_clock += audio_diag_ns() - g_ts;
 +                continue;
 +            }
 +            /* More than two blocks behind: drop the backlog rather than mix a burst. */
@@ -262,10 +443,321 @@ index a44d398a..3a5d8b6f 100644
 +            if (room >= 0 && audio_backend_queued_samples() <
 +                    CELL_AUDIO_BLOCK_SAMPLES * ((audio_elastic() ? (u32)audio_elastic_blocks() : 4u) - 1u))
 +                t0 -= period_ns / 4;
-+#endif
+ #endif
+-        if (room < 0) {
+-            const unsigned long long now = audio_diag_ms();
+-            const unsigned long long due = t0 + blocks * CELL_AUDIO_BLOCK_SAMPLES * 1000ull / CELL_AUDIO_SAMPLE_RATE;
+-            if (now < due) { usleep(1000); continue; }
+-            /* More than 50 ms behind: drop the backlog rather than mix a burst. */
+-            if (now - due > 50) t0 = now - blocks * CELL_AUDIO_BLOCK_SAMPLES * 1000ull / CELL_AUDIO_SAMPLE_RATE;
          }
          blocks++;
++        unsigned long long g_m0 = gaplog ? audio_diag_ns() : 0;
          audio_mix_one_block();
++        if (gaplog) {
++            const unsigned long long g_m1 = audio_diag_ns();
++            g_mix = g_m1 - g_m0;
++#if AUDIO_BACKEND_SDL2
++            if (audio_backend_queued_samples() == 0 && g_logged < 200) {
++                g_logged++;
++                fprintf(stderr, "[audio-gap] #%u since last submit %.1f ms: room %.1f, late block %.1f, clock %.1f, "
++                        "mix %.2f, previous notify %.2f, other %.1f\n", g_logged, (g_m1 - g_prev) / 1e6,
++                        g_room / 1e6, g_late / 1e6, g_clock / 1e6, g_mix / 1e6, g_notify / 1e6,
++                        ((long long)(g_m1 - g_prev) - (long long)(g_room + g_late + g_clock + g_mix + g_notify)) / 1e6);
++            }
++#endif
++        }
+         audio_diag_before_submit();
+         audio_backend_submit(s_mix_buffer, CELL_AUDIO_BLOCK_SAMPLES);
+         audio_diag_after_submit();
++        if (gaplog) { g_prev = audio_diag_ns(); g_room = g_late = g_clock = 0; }
+         audio_notify_event_queues();
++        if (gaplog) g_notify = audio_diag_ns() - g_prev;
+     }
+ 
+     printf("[cellAudio] Mixing thread stopped\n");
+diff --git a/libs/input/cellPad.c b/libs/input/cellPad.c
+index 4b6ed3cf..a1d740e0 100644
+--- a/libs/input/cellPad.c
++++ b/libs/input/cellPad.c
+@@ -544,6 +544,102 @@ static u8 pad_sdl_analog(uint32_t bound, uint32_t in, u8 lt, u8 rt)
+     return v;
+ }
+ 
++/* ---- DualSense extras: light bar, game events, speaker --------------------
++ * A PS3 title knows nothing of these; a port tells cellPad what happens in
++ * the game and the controller shows it. Effects go to every connected
++ * controller that takes them (light bar: DualSense and DualShock 4; the
++ * speaker: a DualSense on USB).
++ *
++ *   ps3_pad_set_light(r, g, b)  the light bar's colour (a port: the team's)
++ *   ps3_pad_event(kind)         PS3_PAD_EVENT_GOAL: the light bar flashes
++ *                               white and the colour for 4 s, three strong
++ *                               pulses, and the game's sound also plays from
++ *                               the controller's speaker for 6 s;
++ *                               PS3_PAD_EVENT_WHISTLE: one long pulse;
++ *                               PS3_PAD_EVENT_HIT: one short pulse.
++ *   PS3_PAD_LIGHT=#rrggbb|off   a fixed colour, over the port's
++ *   PS3_PAD_EVENTS=0            no event effects (light bar colour stays)
++ *   PS3_PAD_SPEAKER=0           no sound from the controller
++ * Event pulses add to the title's own rumble (the stronger of the two).
++ * Steam with Steam Input on takes the DualSense over: the light bar and the
++ * speaker settings never arrive (said once in the log).
++ * -------------------------------------------------------------------------*/
++static struct {
++    int have;                    /* a colour was set */
++    uint8_t r, g, b;
++    int kind;                    /* the running event, 0 = none */
++    unsigned long long start_ms;
++    unsigned long long led_ms;   /* last light bar write */
++    uint8_t lr, lg, lb;          /* what the light bar shows */
++    int speaker_on;              /* the speaker is switched on */
++} s_dsx;
++
++static int pad_events_enabled(void)
++{
++    static int on = -1;
++    if (on < 0) { const char* e = getenv("PS3_PAD_EVENTS"); on = !(e && e[0] == '0'); }
++    return on;
++}
++static int pad_speaker_enabled(void)
++{
++    static int on = -1;
++    if (on < 0) { const char* e = getenv("PS3_PAD_SPEAKER"); on = !(e && e[0] == '0'); }
++    return on;
++}
++/* PS3_PAD_LIGHT: 1 = fixed colour in rgb, -1 = off, 0 = not set. */
++static int pad_light_env(uint8_t rgb[3])
++{
++    static int mode = -2; static uint8_t c[3];
++    if (mode == -2) {
++        const char* e = getenv("PS3_PAD_LIGHT");
++        unsigned v = 0;
++        if (!e || !*e) mode = 0;
++        else if (!strcmp(e, "off")) mode = -1;
++        else if (sscanf(e[0] == '#' ? e + 1 : e, "%6x", &v) == 1) {
++            mode = 1; c[0] = (uint8_t)(v >> 16); c[1] = (uint8_t)(v >> 8); c[2] = (uint8_t)v;
++        } else mode = 0;
++    }
++    memcpy(rgb, c, 3);
++    return mode;
++}
++
++void ps3_pad_set_light(uint8_t r, uint8_t g, uint8_t b)
++{
++    s_dsx.r = r; s_dsx.g = g; s_dsx.b = b;
++    __atomic_store_n(&s_dsx.have, 1, __ATOMIC_RELEASE);
++}
++
++void ps3_pad_event(int kind)
++{
++    if (!pad_events_enabled()) return;
++    s_dsx.start_ms = pad_now_ms();
++    __atomic_store_n(&s_dsx.kind, kind, __ATOMIC_RELEASE);
++    { static int n; if (n++ < 40) fprintf(stderr, "[cellPad] event %s\n",
++          kind == PS3_PAD_EVENT_GOAL ? "goal" : kind == PS3_PAD_EVENT_WHISTLE ? "final whistle" : "hit"); }
++    if (kind == PS3_PAD_EVENT_GOAL && pad_speaker_enabled()) {
++        extern void ps3_audio_controller_burst(unsigned ms);
++        ps3_audio_controller_burst(6000);
++    }
++}
++
++/* Event rumble (0-65535) at `t` ms into the event. */
++static unsigned pad_event_rumble(int kind, unsigned long long t)
++{
++    switch (kind) {
++    case PS3_PAD_EVENT_GOAL:     /* three strong pulses */
++        return (t < 1500 && (t % 500) < 300) ? 65535u : 0u;
++    case PS3_PAD_EVENT_WHISTLE:  /* one long pulse */
++        return t < 900 ? 40000u : 0u;
++    case PS3_PAD_EVENT_HIT:      /* one short knock */
++        return t < 150 ? 60000u : 0u;
++    default: return 0;
++    }
++}
++static unsigned long long pad_event_length(int kind)
++{
++    return kind == PS3_PAD_EVENT_GOAL ? 4000 : kind == PS3_PAD_EVENT_WHISTLE ? 1000 : 200;
++}
++
+ /* Send port i's rumble state to its controller, with a fresh duration. */
+ static void pad_sdl_rumble_send(int i)
+ {
+@@ -551,11 +647,106 @@ static void pad_sdl_rumble_send(int i)
+     PadRumble* r = &s_rumble[i];
+     r->dirty = 0;
+     if (!gc) return;
+-    const int on = r->lo || r->hi;
+-    SDL_GameControllerRumble(gc, r->lo, r->hi, on ? PAD_RUMBLE_HOLD_MS : 0);
++    unsigned lo = r->lo, hi = r->hi;
++    const int kind = __atomic_load_n(&s_dsx.kind, __ATOMIC_ACQUIRE);
++    if (kind) {                                /* an event's pulse adds to the title's */
++        const unsigned ev = pad_event_rumble(kind, pad_now_ms() - s_dsx.start_ms);
++        if (ev > lo) lo = ev;
++        if (ev > hi) hi = ev;
++    }
++    const int on = lo || hi;
++    SDL_GameControllerRumble(gc, (Uint16)lo, (Uint16)hi, on ? PAD_RUMBLE_HOLD_MS : 0);
+     r->sent_ms = on ? pad_now_ms() : 0;
+ }
+ 
++
++#if PAD_BACKEND_SDL2
++/* The DualSense output report pieces SDL forwards (DS5EffectsState_t, 47
++ * bytes). `reset` clears the power-save bits another program (Steam Input)
++ * can leave set, which keep the light bar and trigger motors off. */
++static int pad_ds5_effect(SDL_GameController* gc, int reset, int speaker)
++{
++    if (SDL_GameControllerGetType(gc) != SDL_CONTROLLER_TYPE_PS5) return -1;
++    uint8_t st[47];
++    memset(st, 0, sizeof st);
++    if (reset) { st[1] |= 0x02; st[9] = 0x00; }
++    if (speaker >= 0) {
++        st[0] |= 0x80 | 0x20;                 /* audio control, speaker volume */
++        st[1] |= 0x80;                        /* audio control 2 (preamp) */
++        st[5] = speaker ? 0x64 : 0x00;        /* speaker volume */
++        st[7] = speaker ? (uint8_t)(3 << 4) : 0;   /* output path: the speaker */
++        st[37] = speaker ? 0x04 : 0x00;       /* speaker preamp gain */
++    }
++    return SDL_GameControllerSendEffect(gc, st, (int)sizeof st);
++}
++
++#if defined(__APPLE__)
++#include <libproc.h>
++static void pad_warn_steam(void)
++{
++    static int said;
++    if (said) return;
++    said = 1;
++    int pids[4096];
++    const int n = proc_listallpids(pids, (int)sizeof pids);
++    for (int i = 0; i < n && i < 4096; i++) {
++        char name[64];
++        if (pids[i] > 0 && proc_name(pids[i], name, sizeof name) > 0 && !strcmp(name, "steam_osx")) {
++            fprintf(stderr, "[cellPad] Steam is running: with Steam Input on it takes over the DualSense, and"
++                            " its light bar and speaker stay off. Quit Steam, or turn off PlayStation"
++                            " controller support in Steam > Settings > Controller\n");
++            return;
++        }
++    }
++}
++#else
++static void pad_warn_steam(void) {}
++#endif
++
++/* A controller was just opened. */
++static void pad_dsx_open(SDL_GameController* gc)
++{
++    if (SDL_GameControllerGetType(gc) == SDL_CONTROLLER_TYPE_PS5) {
++        pad_ds5_effect(gc, 1, -1);
++        pad_warn_steam();
++    }
++    s_dsx.led_ms = 0;
++    s_dsx.lr = s_dsx.lg = s_dsx.lb = 0;
++    s_dsx.speaker_on = 0;
++}
++
++/* This poll's light bar and speaker state for controller gc. */
++static void pad_dsx_poll(SDL_GameController* gc)
++{
++    const unsigned long long now = pad_now_ms();
++    const int kind = __atomic_load_n(&s_dsx.kind, __ATOMIC_ACQUIRE);
++    const unsigned long long t = now - s_dsx.start_ms;
++    const int active = kind && t < pad_event_length(kind);
++    if (kind && !active) __atomic_store_n(&s_dsx.kind, 0, __ATOMIC_RELEASE);
++
++    /* speaker: on while a goal's sound plays */
++    const int want_speaker = kind == PS3_PAD_EVENT_GOAL && t < 6000 && pad_speaker_enabled();
++    if (want_speaker != s_dsx.speaker_on) {
++        if (pad_ds5_effect(gc, 0, want_speaker) == 0 || !want_speaker) s_dsx.speaker_on = want_speaker;
++    }
++
++    if (!SDL_GameControllerHasLED(gc)) return;
++    uint8_t c[3];
++    const int env = pad_light_env(c);
++    if (env < 0) c[0] = c[1] = c[2] = 0;
++    else if (env == 0) {
++        if (!__atomic_load_n(&s_dsx.have, __ATOMIC_ACQUIRE)) return;   /* leave the light bar alone */
++        c[0] = s_dsx.r; c[1] = s_dsx.g; c[2] = s_dsx.b;
++    }
++    if (active && kind == PS3_PAD_EVENT_GOAL && (t / 250) % 2 == 0) c[0] = c[1] = c[2] = 255;
++    if (c[0] == s_dsx.lr && c[1] == s_dsx.lg && c[2] == s_dsx.lb) return;
++    if (now - s_dsx.led_ms < 40) return;
++    if (SDL_GameControllerSetLED(gc, c[0], c[1], c[2]) == 0) {
++        s_dsx.lr = c[0]; s_dsx.lg = c[1]; s_dsx.lb = c[2]; s_dsx.led_ms = now;
++    }
++}
++#endif /* PAD_BACKEND_SDL2 */
++
+ /* ---- hot-plug ------------------------------------------------------------
+  * A DualSense over Bluetooth drops off when it is switched off or idles, and
+  * comes back as a NEW SDL device (a new instance id, maybe another index).
+@@ -626,6 +817,7 @@ static void pad_sdl_scan(void)
+         s_sdl_had[port] = 1;
+         memset(&s_rumble[port], 0, sizeof s_rumble[port]);   /* nothing left over from before */
+         SDL_GameControllerRumble(gc, 0, 0, 0);
++        pad_dsx_open(gc);
+         const char* name = SDL_GameControllerName(gc);
+         fprintf(stderr, "[cellPad] SDL controller %s on port %d: %s (instance %d)%s\n",
+                 back ? "reconnected" : "connected", port, name ? name : "?", (int)id,
+@@ -660,8 +852,21 @@ static void pad_sdl_hotplug(int force)
+     pad_sdl_scan();
+ }
+ 
++/* PS3_PAD_EVENT_TEST=<seconds>: a goal event every that many seconds, to try
++ * the controller effects without a game event source. */
++static void pad_event_test_tick(void)
++{
++    static long every = -1; static unsigned long long next;
++    if (every < 0) { const char* e = getenv("PS3_PAD_EVENT_TEST"); every = e ? atol(e) : 0; }
++    if (every <= 0) return;
++    const unsigned long long now = pad_now_ms();
++    if (!next) next = now + (unsigned long long)every * 1000ull;
++    if (now >= next) { next = now + (unsigned long long)every * 1000ull; ps3_pad_event(PS3_PAD_EVENT_GOAL); }
++}
++
+ static void pad_poll_sdl2(void)
+ {
++    pad_event_test_tick();
+     if (pad_sdl_off()) {
+         for (int i = 0; i < PAD_MAX_HOST_PORTS; i++) s_host_state[i].connected = 0;
+         return;
+@@ -682,9 +887,15 @@ static void pad_poll_sdl2(void)
+ 
+         /* Keep a rumble the title set going (see PAD_RUMBLE_HOLD_MS), and send
+          * one cellPadSetActDirect left to this poll. */
+-        if (s_rumble[i].dirty ||
+-            (s_rumble[i].sent_ms && pad_now_ms() - s_rumble[i].sent_ms >= PAD_RUMBLE_RENEW_MS))
+-            pad_sdl_rumble_send(i);
++        { static unsigned long long ev_sent[PAD_MAX_HOST_PORTS];
++          const int ev = __atomic_load_n(&s_dsx.kind, __ATOMIC_ACQUIRE) != 0;
++          if (s_rumble[i].dirty ||
++              (s_rumble[i].sent_ms && pad_now_ms() - s_rumble[i].sent_ms >= PAD_RUMBLE_RENEW_MS) ||
++              ((ev || ev_sent[i]) && pad_now_ms() - ev_sent[i] >= 50)) {
++              pad_sdl_rumble_send(i);
++              ev_sent[i] = ev ? pad_now_ms() : 0;
++          } }
++        pad_dsx_poll(gc);
+ 
+         /* Every SDL input, then the PS3 controls bound to them ([controller]
+          * in PS3_INPUT_MAP; by default each button is its PS3 namesake and
+diff --git a/libs/input/cellPad.h b/libs/input/cellPad.h
+index b35fcb6d..bf460448 100644
+--- a/libs/input/cellPad.h
++++ b/libs/input/cellPad.h
+@@ -171,6 +171,12 @@ typedef struct CellPadActParam {
+  * -----------------------------------------------------------------------*/
+ 
+ /* NID: 0x1CF98800 */
++/* DualSense extras a port drives (cellPad.c): the light bar's colour and game
++ * events (goal, final whistle, a hit) shown on the controller. */
++enum { PS3_PAD_EVENT_GOAL = 1, PS3_PAD_EVENT_WHISTLE = 2, PS3_PAD_EVENT_HIT = 3 };
++void ps3_pad_set_light(uint8_t r, uint8_t g, uint8_t b);
++void ps3_pad_event(int kind);
++
+ s32 cellPadInit(u32 max_connect);
+ 
+ /* NID: 0x4D9B75D5 */
 diff --git a/libs/misc/cellAvconfExt.c b/libs/misc/cellAvconfExt.c
 index 2ab88b8e..fccb6fd3 100644
 --- a/libs/misc/cellAvconfExt.c
@@ -288,34 +780,6 @@ index 2ab88b8e..fccb6fd3 100644
  s32 cellVideoOutSetGamma(u32 videoOut, float gamma)
  {
      (void)videoOut;
-diff --git a/libs/misc/cellMusic.c b/libs/misc/cellMusic.c
-new file mode 100644
-index 00000000..96470bad
---- /dev/null
-+++ b/libs/misc/cellMusic.c
-@@ -0,0 +1,22 @@
-+/*
-+ * ps3recomp - cellMusic (custom soundtrack) HLE
-+ *
-+ * The music utility plays the user's own tracks in place of a title's music.
-+ * There is no music library here, so initialisation reports that the utility
-+ * is unavailable, as a console with no music would leave the title on its own
-+ * soundtrack. Before this existed the import was unresolved and answered
-+ * CELL_OK, so a title could wait for an initialise callback that never came.
-+ */
-+
-+#include "ps3emu/ps3types.h"
-+#include "ps3emu/error_codes.h"
-+#include <stdio.h>
-+
-+#define CELL_MUSIC_ERROR_GENERIC 0x8002C1FF
-+
-+s32 cellMusicInitialize2(s32 mode, s32 spuPriority, u32 func, u32 userData)
-+{
-+    (void)func; (void)userData;
-+    printf("[cellMusic] Initialize2(mode=%d, spuPriority=%d) -> unavailable\n", mode, spuPriority);
-+    return (s32)CELL_MUSIC_ERROR_GENERIC;
-+}
 diff --git a/libs/misc/cellOskDialog.c b/libs/misc/cellOskDialog.c
 index 17e7c674..2a733159 100644
 --- a/libs/misc/cellOskDialog.c
@@ -571,34 +1035,6 @@ index 77e31bc1..46d4c490 100644
  /* ---------------------------------------------------------------------------
   * Input field types
   * -----------------------------------------------------------------------*/
-diff --git a/libs/misc/cellSearch.c b/libs/misc/cellSearch.c
-new file mode 100644
-index 00000000..b4043aa0
---- /dev/null
-+++ b/libs/misc/cellSearch.c
-@@ -0,0 +1,22 @@
-+/*
-+ * ps3recomp - cellSearch (content search) HLE
-+ *
-+ * Content search lists the user's music, photos and videos. There is no such
-+ * library here, so initialisation reports that the utility is unavailable, as
-+ * on a console with nothing to search. Before this existed the import was
-+ * unresolved and answered CELL_OK, so a title could wait for an initialise
-+ * callback that never came.
-+ */
-+
-+#include "ps3emu/ps3types.h"
-+#include "ps3emu/error_codes.h"
-+#include <stdio.h>
-+
-+#define CELL_SEARCH_ERROR_GENERIC 0x8002C8FF
-+
-+s32 cellSearchInitialize(s32 mode, u32 container, u32 func, u32 userData)
-+{
-+    (void)container; (void)func; (void)userData;
-+    printf("[cellSearch] Initialize(mode=%d) -> unavailable\n", mode);
-+    return (s32)CELL_SEARCH_ERROR_GENERIC;
-+}
 diff --git a/libs/spurs/cellSpurs.c b/libs/spurs/cellSpurs.c
 index 89ca663e..23ff8a3a 100644
 --- a/libs/spurs/cellSpurs.c
@@ -1037,7 +1473,7 @@ index 30290c73..8832bbec 100644
  s32 sys_prx_get_module_id_by_name(const char* name, u64 flags, u32* id);
  
 diff --git a/libs/video/cellGcmSys.c b/libs/video/cellGcmSys.c
-index dbeb58fa..be3a0478 100644
+index dbeb58fa..3c474d01 100644
 --- a/libs/video/cellGcmSys.c
 +++ b/libs/video/cellGcmSys.c
 @@ -12,6 +12,7 @@
@@ -1095,7 +1531,38 @@ index dbeb58fa..be3a0478 100644
              u32 idx = (method - 0x0400) >> 2;
              u32 px  = (s_gcm2d.point & 0xFFFF) + idx;
              u32 py  = s_gcm2d.point >> 16;
-@@ -1882,7 +1896,9 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -1815,11 +1829,30 @@ void cellGcm_ref_on_poll(void)
+ 
+ static uint64_t s_ft_sema_t0;          /* PS3_FTRACE: when the walker began waiting on the current acquire */
+ 
++#if defined(__APPLE__)
++extern void* objc_autoreleasePoolPush(void) __attribute__((weak_import));
++extern void  objc_autoreleasePoolPop(void* pool) __attribute__((weak_import));
++#endif
+ void cellGcm_rsx_process_fifo(void)
+ {
+     const uint64_t ft_t0 = PS3_FT_ON() ? ps3_ft_now() : 0;
+     AcquireSRWLockExclusive(&s_gcm_fifo_lock);
++#if defined(__APPLE__)
++    /* The Metal backend autoreleases what it gets from Metal (command
++     * buffers, encoders, pass descriptors, which retain the textures and
++     * buffers they use), and the threads that drain have no pool of their
++     * own that ever empties: everything a drain autoreleased stayed alive for
++     * good. PES 2013 in a window reached 14 GB of IOAccelerator memory, most
++     * of it swapped, and stuttered and crackled. One pool per drain, pushed
++     * and popped here, so it is balanced whichever thread drains. Weak: tools
++     * that link this file without the Objective-C runtime skip it. (From the
++     * inFAMOUS 2 port, erikomis/infamous2-recomp 107bbd4.) */
++    void* drain_pool = objc_autoreleasePoolPush ? objc_autoreleasePoolPush() : NULL;
++#endif
+     gcm_rsx_process_fifo_unlocked();
++#if defined(__APPLE__)
++    if (drain_pool) objc_autoreleasePoolPop(drain_pool);
++#endif
+     ReleaseSRWLockExclusive(&s_gcm_fifo_lock);
+     if (ft_t0) {
+         const uint64_t t1 = ps3_ft_now();
+@@ -1882,7 +1915,9 @@ static void gcm_rsx_process_fifo_unlocked(void)
       * once at init; if the title repoints gCellGcmCurrentContext at a buffer of
       * its own, every field below moves with it and the FIFO the runtime walks
       * stops being the one the title fills. Reported on change, not per tick. */
@@ -1106,7 +1573,7 @@ index dbeb58fa..be3a0478 100644
          static u32 last_ptr = 0xFFFFFFFFu, last_cur = 0xFFFFFFFFu;
          u32 ptr = vm_read32(s_gcm_ctx_out_ea);
          u32 cur = ptr ? vm_read32(ptr + 0x8) : 0;
-@@ -1902,7 +1918,9 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -1902,7 +1937,9 @@ static void gcm_rsx_process_fifo_unlocked(void)
      static int s_drain_every = -1;
      if (s_drain_every < 0) { const char* e = getenv("GCM_DRAINDBG_EVERY");
                               s_drain_every = (e && atoi(e) > 0) ? atoi(e) : 60; }
@@ -1117,7 +1584,7 @@ index dbeb58fa..be3a0478 100644
          static int n = 0;
          if (n++ % s_drain_every == 0)
              printf("[DRAIN] getoff=%08X put=%08X ref=%08X ctx.current=%08X\n",
-@@ -2208,6 +2226,10 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2208,6 +2245,10 @@ static void gcm_rsx_process_fifo_unlocked(void)
                           * publishing put at the end of the pass instead. */
                          if (!gcm_get_eq_put())
                              vm_write32(GCM_CONTROL_GUEST_ADDR + 4, s_fifo_getoff + 4 + count * 4);
@@ -1128,7 +1595,7 @@ index dbeb58fa..be3a0478 100644
                          atomic_thread_fence(memory_order_release);
                          vm_write32(la, v);
                          { static int rn = 0; if (s_sema_offset != 0x400u && PS3_LOG_FIRST(rn, 40))   /* TEMP */
-@@ -2250,6 +2272,8 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2250,6 +2291,8 @@ static void gcm_rsx_process_fifo_unlocked(void)
              for (u32 i = 0; i < count; i++) {
                  u32 dea = gcm_io2ea(s_fifo_getoff + 4 + i * 4);
                  if (!dea) break;
@@ -1137,7 +1604,7 @@ index dbeb58fa..be3a0478 100644
                  u32 m = (type == 0) ? method + i * 4 : method;
                  /* GCM_SET_USER_COMMAND is method 0xEB00, which this decode
                   * splits into subchannel 7 / method 0x0B00 -- so it was landing
-@@ -2261,7 +2285,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2261,7 +2304,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
                    if (sd < 0) sd = getenv("GCM_SUBCH7") ? 1 : 0;
                    if (sd && subch == 7 && (PS3_LOG_FIRST(s7, 16)))
                        fprintf(stderr, "[subch7] method=0x%04X data=0x%08X\n",
@@ -1146,7 +1613,7 @@ index dbeb58fa..be3a0478 100644
                  /* GCM_FLIP_COMMAND (method 0xFEAC, decoded as subchannel 7 /
                   * 0x1EAC): what the firmware's cellGcmSetPrepareFlip writes into
                   * the command buffer it is given (RPCS3: make_command(ctxt->
-@@ -2269,7 +2293,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2269,7 +2312,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
                   * the RSX reaches it -- see GCM_PREPAREFLIP_FIFO. */
                  if (subch == 7 && m == 0x1EACu) {
                      extern s32 gcm_flip_request_ext(u32 bufferId, int in_fifo);
@@ -1155,7 +1622,7 @@ index dbeb58fa..be3a0478 100644
                      gcm_flip_request_ext(id, 1);
                      gcm_set_current_display_buffer(id);
                      s_flip_pending = 1;
-@@ -2278,13 +2302,13 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2278,13 +2321,13 @@ static void gcm_rsx_process_fifo_unlocked(void)
                  }
                  if (subch == 7 && m == 0x0B00u) {
                      extern void rsx_raise_user_cmd(u32 arg);
@@ -1171,7 +1638,7 @@ index dbeb58fa..be3a0478 100644
                      continue;
                  }
                  /* GCM_SUBCH1_3D=1: treat subchannel 1 as the 3D object too.
-@@ -2301,7 +2325,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2301,7 +2344,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
                    if (od < 0) { const char* e = getenv("GCM_OBJDBG"); od = e ? 1 : 0; }
                    if (od && m == 0) {
                        static unsigned seen[8]; static int have[8];
@@ -1180,7 +1647,7 @@ index dbeb58fa..be3a0478 100644
                        if (subch < 8 && (!have[subch] || seen[subch] != h)) {
                            have[subch] = 1; seen[subch] = h;
                            printf("[GCM-OBJ] subch=%u SET_OBJECT handle=0x%08X%c",
-@@ -2331,7 +2355,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2331,7 +2374,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
                    /* GCM_VAL_WATCH=<hex>: every FIFO word carrying that value, any method. */
                    { static u32 vw = 1;
                      if (vw == 1) { const char* e = getenv("GCM_VAL_WATCH"); vw = e ? (u32)strtoul(e, 0, 16) : 0; }
@@ -1189,7 +1656,7 @@ index dbeb58fa..be3a0478 100644
                          static int vn; if (PS3_LOG_FIRST(vn, 64))
                              printf("[valwatch] subch=%u method=0x%04X = 0x%08X get=0x%X%c", subch, m, vw, s_fifo_getoff, 10);
                      } }
-@@ -2339,11 +2363,11 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2339,11 +2382,11 @@ static void gcm_rsx_process_fifo_unlocked(void)
                    if (sg && !subch && (cm3 == 0x210 || cm3 == 0x214 || cm3 == 0x218 || cm3 == 0x288 || cm3 == 0x28C ||
                                         cm3 == 0x1A20)) {
                        if ((poll++ & 255u) == 0) { FILE* g = fopen(sg, "rb"); open_g = g != NULL; if (g) fclose(g); }
@@ -1203,7 +1670,7 @@ index dbeb58fa..be3a0478 100644
                    } }
                  /* Mirror the whole method stream into the live NV4097->D3D12
                   * engine (caner / canersaka). Inert unless RSX_LIVE_DRAW is set.
-@@ -2351,7 +2375,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2351,7 +2394,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
                   * canonicalises with & 0x1FFC itself. */
                  { static int live = -1;
                    if (live < 0) live = rsx_live_draw_enabled();
@@ -1212,7 +1679,7 @@ index dbeb58fa..be3a0478 100644
                  /* GCM_METHOD_HIST=<secs>: every <secs>, the most frequent
                   * (subchannel, method) pairs dispatched since the last report --
                   * what a frame is actually made of when nothing draws. */
-@@ -2385,7 +2409,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2385,7 +2428,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
                    if (eng < 0) eng = rsx_draw_engine_enabled();
                    if (eng && (!gcm_std_subchannels() || subch == 0 ||
                                ((subch << 13) | m) >= 0xE000u))
@@ -1221,7 +1688,7 @@ index dbeb58fa..be3a0478 100644
  
                  /* RSX_LIVE_FEED_DBG=1: what the FIFO actually carries. Counted
                   * for any run, live engine or not, so the method stream and the
-@@ -2409,13 +2433,13 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2409,13 +2452,13 @@ static void gcm_rsx_process_fifo_unlocked(void)
                   * the draw-engine call above does. */
                  { const u32 mfull = (subch << 13) | m;
                  if (mfull == 0xEB00u || mfull == 0xEB04u) {
@@ -1239,7 +1706,7 @@ index dbeb58fa..be3a0478 100644
                      /* NV406E_SET_REFERENCE: queue the fence value for PACED
                       * publication (gcm_ref_publish below) instead of letting a
                       * later fence in the same batch overwrite it. */
-@@ -2424,9 +2448,9 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2424,9 +2467,9 @@ static void gcm_rsx_process_fifo_unlocked(void)
                       * area. Sample counts are not measured, so a ZPASS query
                       * reports "visible" -- the conservative answer; reading 0
                       * tells the title every queried object is occluded. */
@@ -1251,7 +1718,7 @@ index dbeb58fa..be3a0478 100644
                          const u32 val = (v >> 24) == 1u ? 0xFFFFu : 0u;
                          const u64 ts = gcm_report_timestamp();
                          const int main_mem = s_report_dma == 0xFEED0001u || s_report_dma == 0xBAD68000u;
-@@ -2451,7 +2475,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2451,7 +2494,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
                          }
                      }
                  } else
@@ -1260,7 +1727,7 @@ index dbeb58fa..be3a0478 100644
                  }
              }
              s_fifo_getoff += 4 + count * 4;
-@@ -2536,7 +2560,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2536,7 +2579,7 @@ static void gcm_rsx_process_fifo_unlocked(void)
       * per tick (gcm_ref_push/gcm_ref_publish_one above) so every SET_REFERENCE
       * value stays observable to equality-waiters. The wrap recycle path polls
       * the drained EA. */
@@ -1269,7 +1736,7 @@ index dbeb58fa..be3a0478 100644
          static int n2 = 0;
          if (n2++ % s_drain_every == 0)
              fprintf(stderr, "[DRAINEND] %s: %08X -> %08X (%u bytes), put=%08X\n",
-@@ -2615,8 +2639,20 @@ static void gcm_rsx_process_fifo_unlocked(void)
+@@ -2615,8 +2658,20 @@ static void gcm_rsx_process_fifo_unlocked(void)
           * overruns first, so the first overrun is recycled by the path above
           * and near-end recycling is enabled from then on. */
          static int s_title_overran = 0;
@@ -1292,7 +1759,7 @@ index dbeb58fa..be3a0478 100644
          if (begin && end > begin && cur >= begin && cur + GCM_RECYCLE_SLACK >= end
                  && head_consumed && s_title_overran) {
              u32 io_begin = gcm_ea2io(begin);
-@@ -2981,7 +3017,7 @@ s32 cellGcmSetPrepareFlip(void* ctx, u32 bufferId)
+@@ -2981,7 +3036,7 @@ s32 cellGcmSetPrepareFlip(void* ctx, u32 bufferId)
      if (!s_display_buffer_set[bufferId])
          return CELL_GCM_ERROR_INVALID_VALUE;
  
@@ -1301,7 +1768,7 @@ index dbeb58fa..be3a0478 100644
  
      /* GCM_PREPAREFLIP_FIFO=1: do what the firmware does -- append the flip
       * (GCM_FLIP_COMMAND, id) to the command buffer the title passed and return
-@@ -4019,7 +4055,7 @@ u32 cellGcmGetDefaultSegmentWordSize(void)
+@@ -4019,7 +4074,7 @@ u32 cellGcmGetDefaultSegmentWordSize(void)
  /* Immediate flip — perform flip right now */
  s32 cellGcmSetFlipImmediate(u32 bufferId)
  {
@@ -2832,7 +3299,7 @@ index 670e8863..894441a3 100644
   * unnorm_mask selects the units; dim[u] gives that unit's {width, height};
   * cube units are skipped. Returns the number of Sample sites patched, or -1 if
 diff --git a/libs/video/rsx_metal_backend.m b/libs/video/rsx_metal_backend.m
-index 55fbb051..d85cb924 100644
+index 55fbb051..fa92f09c 100644
 --- a/libs/video/rsx_metal_backend.m
 +++ b/libs/video/rsx_metal_backend.m
 @@ -52,6 +52,18 @@
@@ -3067,7 +3534,7 @@ index 55fbb051..d85cb924 100644
      s_window_close_observer = [[NSNotificationCenter defaultCenter]
          addObserverForName:NSWindowWillCloseNotification object:window queue:nil
          usingBlock:^(NSNotification* note) {
-@@ -587,13 +750,220 @@ static void window_close_observer_start(NSWindow* window)
+@@ -587,13 +750,256 @@ static void window_close_observer_start(NSWindow* window)
          }];
  }
  
@@ -3196,6 +3663,42 @@ index 55fbb051..d85cb924 100644
 +    return "?";
 +}
 +
++/* PS3_WINDOW_ICON=<png|icns>|game: the Dock / app switcher icon. A plain
++ * executable has none of its own, so the Dock shows a generic "exec" one.
++ * "game" is the player's own copy's PS3_GAME/ICON0.PNG under PS3_VFS_ROOT
++ * (or the working folder), so nothing of the game ships with the build. A wide
++ * icon (a PS3 ICON0 is 320x176) is centred on a transparent square rather than
++ * stretched. From the inFAMOUS 2 port. */
++static void apply_icon(void)
++{
++    const char* e = getenv("PS3_WINDOW_ICON");
++    if (!e || !*e || !strcmp(e, "none") || !strcmp(e, "0")) return;
++    char path[2048];
++    if (!strcmp(e, "game")) {
++        const char* root = getenv("PS3_VFS_ROOT");
++        snprintf(path, sizeof path, "%s/PS3_GAME/ICON0.PNG", root && *root ? root : ".");
++    } else {
++        snprintf(path, sizeof path, "%s", e);
++    }
++    NSImage* img = [[NSImage alloc] initWithContentsOfFile:[NSString stringWithUTF8String:path]];
++    if (!img) {
++        fprintf(stderr, "[RSX metal] PS3_WINDOW_ICON: %s is not an image AppKit reads\n", path);
++        return;
++    }
++    const NSSize sz = [img size];
++    if (sz.width > 0 && sz.height > 0 && sz.width != sz.height) {
++        const CGFloat d = sz.width > sz.height ? sz.width : sz.height;
++        NSImage* src = img;
++        img = [NSImage imageWithSize:NSMakeSize(d, d) flipped:NO
++                      drawingHandler:^BOOL(NSRect dst) {
++            (void)dst;
++            [src drawInRect:NSMakeRect((d - sz.width) / 2, (d - sz.height) / 2, sz.width, sz.height)];
++            return YES;
++        }];
++    }
++    [NSApp setApplicationIconImage:img];
++}
++
 +/* PS3_DISPLAY: the screen the window opens on, and so the one fullscreen and
 + * borderless cover. Unset, or a screen that is not there: the main one. */
 +static NSScreen* wm_pick_screen(const char** why)
@@ -3290,9 +3793,11 @@ index 55fbb051..d85cb924 100644
          initWithContentRect:frame
                    styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                               NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
-@@ -604,19 +974,56 @@ static int create_window_impl(const char* title)
+@@ -603,20 +1009,58 @@ static int create_window_impl(const char* title)
+     window_close_observer_start(s_window);
  
      [s_window setTitle:[NSString stringWithUTF8String:(title ? title : "ps3recomp")]];
++    apply_icon();
      [s_window center];
 +    if (s_wm_opts) {
 +        [s_window setCollectionBehavior:NSWindowCollectionBehaviorFullScreenPrimary];
@@ -3348,7 +3853,7 @@ index 55fbb051..d85cb924 100644
      fps_start();
      return 0;
  }
-@@ -800,9 +1207,11 @@ static void dump_shader(const char* name, const char* text)
+@@ -800,9 +1244,11 @@ static void dump_shader(const char* name, const char* text)
      if ([src containsString:@"vertex main0_out main0"])
          src = [src stringByReplacingOccurrencesOfString:@"[[position]]"
                                               withString:@"[[position, invariant]]"];
@@ -3360,7 +3865,7 @@ index 55fbb051..d85cb924 100644
      if (!lib) {
          fprintf(stderr, "[RSX metal] %s: MSL compile failed: %s\n", what,
                  [[err localizedDescription] UTF8String]);
-@@ -1939,8 +2348,10 @@ static u32 blend_key(const MtlDraw* d)
+@@ -1939,8 +2385,10 @@ static u32 blend_key(const MtlDraw* d)
      }
  
      NSError* err = nil;
@@ -3371,7 +3876,7 @@ index 55fbb051..d85cb924 100644
      if (!pso) {
          fprintf(stderr, "[RSX metal] pipeline state failed (vs %d, fs %d): %s\n",
                  d->vs_idx, d->fs_idx, [[err localizedDescription] UTF8String]);
-@@ -2234,6 +2645,10 @@ static void release_surfaces(void)
+@@ -2234,6 +2682,10 @@ static void release_surfaces(void)
  static u32 s_eng_obj_free[ENG_MAX_OBJECTS];
  static u32 s_eng_obj_free_count;
  static u8 s_eng_obj_retired[ENG_MAX_OBJECTS];
@@ -3382,7 +3887,7 @@ index 55fbb051..d85cb924 100644
  
  typedef struct {
      id<MTLRenderPipelineState> pso;
-@@ -2276,6 +2691,7 @@ static void release_surfaces(void)
+@@ -2276,6 +2728,7 @@ static void release_surfaces(void)
      u32 vb_off, stride, vertex_count;
      u32 ib_off, index_count;
      u32 vs_cb_off, vs_cb_bytes;
@@ -3390,7 +3895,7 @@ index 55fbb051..d85cb924 100644
      u32 ps_cb_off, ps_cb_bytes;
      u32 tex[RSX_BE_MAX_TEXTURES];
      int samp[RSX_BE_MAX_TEXTURES];
-@@ -2295,6 +2711,18 @@ static void release_surfaces(void)
+@@ -2295,6 +2748,18 @@ static void release_surfaces(void)
  static u32 s_eng_rec_count;
  static u32 s_eng_dropped;
  
@@ -3409,7 +3914,7 @@ index 55fbb051..d85cb924 100644
  static u8* s_eng_stage;
  static u32 s_eng_stage_used, s_eng_stage_cap;
  
-@@ -2306,6 +2734,8 @@ static void release_surfaces(void)
+@@ -2306,6 +2771,8 @@ static void release_surfaces(void)
  static id<MTLRenderPipelineState> s_eng_blit_pso;
  static MTLPixelFormat             s_eng_blit_pso_fmt;
  static id<MTLRenderPipelineState> s_eng_depth_pso;
@@ -3418,7 +3923,7 @@ index 55fbb051..d85cb924 100644
  static id<MTLSamplerState>        s_eng_point_sampler;
  static id<MTLSamplerState>        s_eng_linear_sampler;   /* FXAA's taps */
  
-@@ -2321,6 +2751,35 @@ static void release_surfaces(void)
+@@ -2321,6 +2788,35 @@ static void release_surfaces(void)
  static id<MTLRenderPipelineState> s_eng_fxaa_pso;
  static MTLPixelFormat             s_eng_fxaa_pso_fmt;
  static id<MTLTexture>             s_eng_fxaa_tex;
@@ -3454,7 +3959,7 @@ index 55fbb051..d85cb924 100644
  
  static float eng_sharpen_from(const char* e)
  {
-@@ -2329,8 +2788,179 @@ static float eng_sharpen_from(const char* e)
+@@ -2329,8 +2825,179 @@ static float eng_sharpen_from(const char* e)
      return !(v > 0.0) ? 0.0f : v > 1.0 ? 1.0f : (float)v;
  }
  
@@ -3634,7 +4139,7 @@ index 55fbb051..d85cb924 100644
      if (s_eng_fxaa < 0) {
          const char* e = getenv("PS3_AA");
          s_eng_fxaa = (e && !strcasecmp(e, "fxaa"));
-@@ -2391,6 +3021,65 @@ static void eng_post_options(void)
+@@ -2391,6 +3058,65 @@ static void eng_post_options(void)
  "    if (p.gamma != 1.0) c.rgb = pow(max(c.rgb, 0.0), float3(p.gamma));\n"
  "    return c;\n"
  "}\n"
@@ -3700,7 +4205,7 @@ index 55fbb051..d85cb924 100644
  /* FXAA 3.11, quality preset 29 (Timothy Lottes, public domain), with luma
   * from RGB: the display buffer's alpha is not luma, and it is kept. */
  "static float fx_l(float3 c) { return dot(c, float3(0.299, 0.587, 0.114)); }\n"
-@@ -2483,6 +3172,23 @@ static void eng_post_options(void)
+@@ -2483,6 +3209,23 @@ static void eng_post_options(void)
  "                            depth2d<float> src [[texture(0)]],\n"
  "                            sampler s [[sampler(0)]]) {\n"
  "    return src.sample(s, i.uv);\n"
@@ -3724,7 +4229,7 @@ index 55fbb051..d85cb924 100644
  "}\n";
  
  static u32 eng_obj_add(id<MTLTexture> t)
-@@ -2496,6 +3202,7 @@ static u32 eng_obj_add(id<MTLTexture> t)
+@@ -2496,6 +3239,7 @@ static u32 eng_obj_add(id<MTLTexture> t)
          slot = s_eng_obj_count++;
      }
      s_eng_obj[slot] = t;
@@ -3732,7 +4237,7 @@ index 55fbb051..d85cb924 100644
      return slot + 1;
  }
  
-@@ -2504,6 +3211,71 @@ static u32 eng_obj_add(id<MTLTexture> t)
+@@ -2504,6 +3248,71 @@ static u32 eng_obj_add(id<MTLTexture> t)
      return (handle && handle <= s_eng_obj_count) ? s_eng_obj[handle - 1] : nil;
  }
  
@@ -3804,7 +4309,7 @@ index 55fbb051..d85cb924 100644
  /* Recorded commands resolve numeric handles during encoding. Do not recycle
   * a released slot until those commands have acquired their Metal resources.
   * Submitted command buffers retain the objects for the GPU's remaining work. */
-@@ -2557,28 +3329,63 @@ static MTLPixelFormat eng_pixel_format(rsx_be_format f)
+@@ -2557,28 +3366,63 @@ static MTLPixelFormat eng_pixel_format(rsx_be_format f)
  
  static void eng_encode_and_commit(id<MTLTexture> present_dst);
  
@@ -3877,7 +4382,7 @@ index 55fbb051..d85cb924 100644
  static int eng_stage_copy(const void* src, u32 bytes, u32* out_off)
  {
      if (!bytes) { *out_off = 0; return 1; }
-@@ -2627,15 +3434,29 @@ static void eng_shutdown(void* user)
+@@ -2627,15 +3471,29 @@ static void eng_shutdown(void* user)
      memset(s_eng_obj_retired, 0, sizeof s_eng_obj_retired);
      s_eng_pipe_count = s_eng_func_count = s_eng_samp_count = s_eng_view_count = 0;
      s_eng_rec_count = 0;
@@ -3908,7 +4413,7 @@ index 55fbb051..d85cb924 100644
      s_eng_active = 0;
      s_eng_encoding_failed = 0;
      s_eng_checked_completed = 0;
-@@ -2730,9 +3551,10 @@ static u32 eng_color_target_create(void* user, rsx_be_format fmt, u32 w, u32 h,
+@@ -2730,9 +3588,10 @@ static u32 eng_color_target_create(void* user, rsx_be_format fmt, u32 w, u32 h,
  {
      (void)user;
      if (!s_dev || !w || !h) return 0;
@@ -3920,7 +4425,7 @@ index 55fbb051..d85cb924 100644
                                                         mipmapped:NO];
      /* PixelFormatView because a unit sampling this target wears its own
       * TEXTURE_CONTROL1 crossbar as a view swizzle. */
-@@ -2740,10 +3562,19 @@ static u32 eng_color_target_create(void* user, rsx_be_format fmt, u32 w, u32 h,
+@@ -2740,10 +3599,19 @@ static u32 eng_color_target_create(void* user, rsx_be_format fmt, u32 w, u32 h,
                 MTLTextureUsagePixelFormatView;
      id<MTLTexture> t = [s_dev newTextureWithDescriptor:td];
      if (!t) return 0;
@@ -3942,7 +4447,7 @@ index 55fbb051..d85cb924 100644
  }
  
  static u32 eng_surface_view(void* user, u32 surface, u32 remap, u32 rsx_format)
-@@ -2766,7 +3597,7 @@ static u32 eng_surface_view(void* user, u32 surface, u32 remap, u32 rsx_format)
+@@ -2766,7 +3634,7 @@ static u32 eng_surface_view(void* user, u32 surface, u32 remap, u32 rsx_format)
                                   swizzle:MTLTextureSwizzleChannelsMake(
                                               swizzle_sel(sel[1]), swizzle_sel(sel[2]),
                                               swizzle_sel(sel[3]), swizzle_sel(sel[0]))];
@@ -3951,7 +4456,7 @@ index 55fbb051..d85cb924 100644
      if (!handle) return 0;
      s_eng_view[s_eng_view_count].surface = surface;
      s_eng_view[s_eng_view_count].remap   = remap;
-@@ -2778,9 +3609,8 @@ static u32 eng_surface_view(void* user, u32 surface, u32 remap, u32 rsx_format)
+@@ -2778,9 +3646,8 @@ static u32 eng_surface_view(void* user, u32 surface, u32 remap, u32 rsx_format)
  
  /* Allocate now, copy in command order. The returned object is unique to
   * this draw; later snapshots never overwrite a queued draw's sampled image. */
@@ -3962,7 +4467,7 @@ index 55fbb051..d85cb924 100644
      id<MTLTexture> src = eng_obj(surface);
      if (!src || [src textureType] != MTLTextureType2D || [src sampleCount] != 1 ||
          !w || !h || w > [src width] || h > [src height] ||
-@@ -2790,7 +3620,7 @@ static u32 eng_color_snapshot_rect(void* user, u32 surface, u32 w, u32 h)
+@@ -2790,7 +3657,7 @@ static u32 eng_color_snapshot_rect(void* user, u32 surface, u32 w, u32 h)
                           width:w height:h mipmapped:NO];
      td.storageMode = MTLStorageModePrivate;
      td.usage = MTLTextureUsageShaderRead | MTLTextureUsagePixelFormatView;
@@ -3971,7 +4476,7 @@ index 55fbb051..d85cb924 100644
      if (!copy) { s_eng_dropped++; return 0; }
      EngRecord* r = &s_eng_rec[s_eng_rec_count++];
      memset(r, 0, sizeof *r);
-@@ -2800,11 +3630,20 @@ static u32 eng_color_snapshot_rect(void* user, u32 surface, u32 w, u32 h)
+@@ -2800,11 +3667,20 @@ static u32 eng_color_snapshot_rect(void* user, u32 surface, u32 w, u32 h)
      return copy;
  }
  
@@ -3993,7 +4498,7 @@ index 55fbb051..d85cb924 100644
  }
  
  static u32 eng_depth_target_create(void* user, u32 w, u32 h)
-@@ -2813,21 +3652,21 @@ static u32 eng_depth_target_create(void* user, u32 w, u32 h)
+@@ -2813,21 +3689,21 @@ static u32 eng_depth_target_create(void* user, u32 w, u32 h)
      if (!s_dev || !w || !h) return 0;
      MTLTextureDescriptor* td =
          [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTL_DEPTH_FORMAT
@@ -4019,7 +4524,7 @@ index 55fbb051..d85cb924 100644
      if (!eng_obj(depth) || !s_eng_helper_lib) return 0;
      if (s_eng_rec_count >= ENG_MAX_RECORDS) { s_eng_dropped++; return 0; }
      if (!s_eng_depth_pso) {
-@@ -2848,7 +3687,7 @@ static u32 eng_depth_snapshot(void* user, u32 depth, u32 w, u32 h)
+@@ -2848,7 +3724,7 @@ static u32 eng_depth_snapshot(void* user, u32 depth, u32 w, u32 h)
                                                             width:w height:h
                                                         mipmapped:NO];
      td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
@@ -4028,7 +4533,7 @@ index 55fbb051..d85cb924 100644
      if (!dst) return 0;
  
      EngRecord* r = &s_eng_rec[s_eng_rec_count++];
-@@ -2859,6 +3698,69 @@ static u32 eng_depth_snapshot(void* user, u32 depth, u32 w, u32 h)
+@@ -2859,6 +3735,69 @@ static u32 eng_depth_snapshot(void* user, u32 depth, u32 w, u32 h)
      return dst;
  }
  
@@ -4098,7 +4603,7 @@ index 55fbb051..d85cb924 100644
  /* ---- pipelines ----------------------------------------------------------- */
  
  static id<MTLFunction> eng_function(const char* hlsl, int stage,
-@@ -2888,6 +3790,42 @@ static u32 eng_depth_snapshot(void* user, u32 depth, u32 w, u32 h)
+@@ -2888,6 +3827,42 @@ static u32 eng_depth_snapshot(void* user, u32 depth, u32 w, u32 h)
      return fn;
  }
  
@@ -4141,7 +4646,7 @@ index 55fbb051..d85cb924 100644
  static u32 eng_pipeline_create(void* user, const char* vs_hlsl, const char* ps_hlsl,
                                 const rsx_be_render_state* rs,
                                 const rsx_vertex_layout_plan* layout,
-@@ -2899,7 +3837,17 @@ static u32 eng_pipeline_create(void* user, const char* vs_hlsl, const char* ps_h
+@@ -2899,7 +3874,17 @@ static u32 eng_pipeline_create(void* user, const char* vs_hlsl, const char* ps_h
      if (!rt_count) rt_count = 1;
      if (rt_count > RSX_BE_MAX_COLOR_TARGETS) rt_count = RSX_BE_MAX_COLOR_TARGETS;
      if (s_eng_pipe_count >= ENG_MAX_PIPES) return 0;
@@ -4160,7 +4665,7 @@ index 55fbb051..d85cb924 100644
      if (!vs) return 0;
      id<MTLFunction> fs = eng_function(ps_hlsl, RSX_SHADER_STAGE_FRAGMENT, "fp");
      if (!fs) return 0;
-@@ -3119,10 +4067,62 @@ static void eng_bind_pipeline(void* user, u32 pipeline)
+@@ -3119,10 +4104,62 @@ static void eng_bind_pipeline(void* user, u32 pipeline)
  static void eng_bind_vs_constants(void* user, const void* data, u32 bytes)
  {
      (void)user;
@@ -4223,7 +4728,7 @@ index 55fbb051..d85cb924 100644
  static void eng_bind_ps_constants(void* user, const void* data, u32 bytes)
  {
      (void)user;
-@@ -3153,15 +4153,20 @@ static void eng_bind_vertex_textures(void* user, const u32* textures,
+@@ -3153,15 +4190,20 @@ static void eng_bind_vertex_textures(void* user, const u32* textures,
  static void eng_set_viewport(void* user, float x, float y, float w, float h)
  {
      (void)user;
@@ -4248,7 +4753,7 @@ index 55fbb051..d85cb924 100644
  }
  
  static void eng_set_stencil_ref(void* user, u32 ref)
-@@ -3225,37 +4230,116 @@ static void eng_clear_depth_stencil(void* user, u32 depth, u32 flags,
+@@ -3225,37 +4267,116 @@ static void eng_clear_depth_stencil(void* user, u32 depth, u32 flags,
  
  /* ---- replay -------------------------------------------------------------- */
  
@@ -4386,7 +4891,7 @@ index 55fbb051..d85cb924 100644
      }
      /* An indexed draw is really indexed here: the index buffer is what keeps a
       * strip's shared vertices from being fetched and uploaded per triangle.
-@@ -3350,7 +4434,11 @@ static void eng_encode_records(id<MTLCommandBuffer> cb, id<MTLBuffer> stage)
+@@ -3350,7 +4471,11 @@ static void eng_encode_records(id<MTLCommandBuffer> cb, id<MTLBuffer> stage)
              const EngRecord* r = &s_eng_rec[i++];
              id<MTLTexture> src = eng_obj(r->depth);
              id<MTLTexture> dst = eng_obj(r->resolve_dst);
@@ -4399,7 +4904,7 @@ index 55fbb051..d85cb924 100644
              MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
              rp.colorAttachments[0].texture     = dst;
              rp.colorAttachments[0].loadAction  = MTLLoadActionDontCare;
-@@ -3358,9 +4446,10 @@ static void eng_encode_records(id<MTLCommandBuffer> cb, id<MTLBuffer> stage)
+@@ -3358,9 +4483,10 @@ static void eng_encode_records(id<MTLCommandBuffer> cb, id<MTLBuffer> stage)
              id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:rp];
              if (!e) { s_eng_encoding_failed = 1; continue; }
              s_ft_resolves++;
@@ -4411,7 +4916,7 @@ index 55fbb051..d85cb924 100644
              [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
              [e endEncoding];
              continue;
-@@ -3505,6 +4594,7 @@ static void eng_encode_records(id<MTLCommandBuffer> cb, id<MTLBuffer> stage)
+@@ -3505,6 +4631,7 @@ static void eng_encode_records(id<MTLCommandBuffer> cb, id<MTLBuffer> stage)
              continue;
          }
          s_ft_passes++;
@@ -4419,7 +4924,7 @@ index 55fbb051..d85cb924 100644
          while (i < s_eng_rec_count && s_eng_rec[i].kind == ENG_REC_DRAW &&
                 eng_record_targets_are(&s_eng_rec[i], rt, nrt) &&
                 (s_eng_rec[i].depth == depth ||
-@@ -3562,6 +4652,123 @@ static void eng_encode_records(id<MTLCommandBuffer> cb, id<MTLBuffer> stage)
+@@ -3562,6 +4689,132 @@ static void eng_encode_records(id<MTLCommandBuffer> cb, id<MTLBuffer> stage)
      return s_eng_fxaa_tex;
  }
  
@@ -4516,6 +5021,9 @@ index 55fbb051..d85cb924 100644
 +    if (!s_eng_ds_kernel) {
 +        s_eng_ds_kernel = [[lanczos alloc] initWithDevice:s_dev];
 +        if (!s_eng_ds_kernel) { downscale_fail("not supported on this GPU"); return nil; }
++        /* Taps past the picture's edge read the edge; the default (zero)
++         * reads black and darkens the outer row and column. */
++        ((MPSImageLanczosScale*)s_eng_ds_kernel).edgeMode = MPSImageEdgeModeClamp;
 +    }
 +    if (!s_eng_ds_out || [s_eng_ds_out width] != ow || [s_eng_ds_out height] != oh ||
 +        [s_eng_ds_out pixelFormat] != [src pixelFormat]) {
@@ -4540,11 +5048,26 @@ index 55fbb051..d85cb924 100644
 +#endif
 +}
 +
++/* 1 when the frame being encoded went through eng_lanczos (its completion
++ * handler counts GPU failures on reduced frames). */
++static int s_eng_ds_frame;
++/* Windowed frames that failed on the GPU in a row, from completion handlers. */
++static volatile int s_eng_gpu_fail_run;
++
  /* Put a surface on the drawable. A straight blit would need matching formats
   * and sizes; a full-screen sample needs neither, and the guest's surfaces are
   * routinely a different size from the window.
-@@ -3575,10 +4782,23 @@ static void eng_blit_to_display(id<MTLCommandBuffer> cb, id<MTLTexture> src,
-     if (!src || !dst || !s_eng_helper_lib) return;
+@@ -3569,54 +4822,90 @@ static void eng_encode_records(id<MTLCommandBuffer> cb, id<MTLBuffer> stage)
+  * With PS3_AA=fxaa the surface goes through FXAA first, at its own size; with
+  * PS3_SHARPEN this pass sharpens it as it samples. Either one that is off or
+  * fails is skipped. */
+-static void eng_blit_to_display(id<MTLCommandBuffer> cb, id<MTLTexture> src,
++static int eng_blit_to_display(id<MTLCommandBuffer> cb, id<MTLTexture> src,
+                                 id<MTLTexture> dst)
+ {
+-    if (!src || !dst || !s_eng_helper_lib) return;
++    s_eng_ds_frame = 0;
++    if (!src || !dst || !s_eng_helper_lib) return 0;
      eng_post_options();
      if (s_eng_fxaa) { id<MTLTexture> t = eng_fxaa(cb, src); if (t) src = t; }
 -    if (!s_eng_blit_pso || s_eng_blit_pso_fmt != [dst pixelFormat]) {
@@ -4557,7 +5080,7 @@ index 55fbb051..d85cb924 100644
 +               [dst width] < [src width] && [dst height] < [src height]) {
 +        /* PS3_DOWNSCALE: Lanczos down to the drawable's size, when that is smaller. */
 +        id<MTLTexture> t = eng_lanczos(cb, src, [dst width], [dst height]);
-+        if (t) src = t;
++        if (t) { src = t; s_eng_ds_frame = 1; }
 +    }
 +    const int post = s_eng_post_on;
 +    if (!s_eng_blit_pso || s_eng_blit_pso_fmt != [dst pixelFormat] || s_eng_blit_pso_post != post) {
@@ -4569,22 +5092,31 @@ index 55fbb051..d85cb924 100644
          pd.colorAttachments[0].pixelFormat = [dst pixelFormat];
          NSError* err = nil;
          s_eng_blit_pso = [s_dev newRenderPipelineStateWithDescriptor:pd error:&err];
-@@ -3588,6 +4808,7 @@ static void eng_blit_to_display(id<MTLCommandBuffer> cb, id<MTLTexture> src,
-             return;
+         if (!s_eng_blit_pso) {
+             fprintf(stderr, "[rsx engine/metal] present pipeline failed: %s\n",
+                     [[err localizedDescription] UTF8String]);
+-            return;
++            return 0;
          }
          s_eng_blit_pso_fmt = [dst pixelFormat];
 +        s_eng_blit_pso_post = post;
      }
      MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
      rp.colorAttachments[0].texture     = dst;
-@@ -3597,26 +4818,43 @@ static void eng_blit_to_display(id<MTLCommandBuffer> cb, id<MTLTexture> src,
-     if (!e) return;
+     rp.colorAttachments[0].loadAction  = MTLLoadActionDontCare;
+     rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+     id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:rp];
+-    if (!e) return;
++    if (!e) return 0;
      [e setRenderPipelineState:s_eng_blit_pso];
      [e setFragmentTexture:src atIndex:0];
 -    [e setFragmentSamplerState:s_eng_point_sampler atIndex:0];
 +    /* Point sampling as always; bilinear only when PS3_UPSCALE has the
-+     * drawable larger and MetalFX did not fill it. */
-+    const int lin = s_upscale && ([src width] != [dst width] || [src height] != [dst height]);
++     * drawable larger and MetalFX did not fill it, or when the Lanczos
++     * reduction gave up (the frames before the drawable goes back to the
++     * picture's size). */
++    const int lin = (s_upscale || (s_down && !__atomic_load_n(&s_down_on, __ATOMIC_ACQUIRE))) &&
++                    ([src width] != [dst width] || [src height] != [dst height]);
 +    [e setFragmentSamplerState:lin ? s_eng_linear_sampler : s_eng_point_sampler atIndex:0];
      /* The video out's gamma (cellVideoOutSetGamma, the title's brightness
       * setting): out = in^gamma, as RPCS3's calibration pass applies it. The
@@ -4615,6 +5147,7 @@ index 55fbb051..d85cb924 100644
 +      } }
      [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
      [e endEncoding];
++    return 1;
  }
  
  /* Encode everything recorded so far and commit it.
@@ -4631,7 +5164,7 @@ index 55fbb051..d85cb924 100644
   * in-flight semaphore instead, the same bound the vtable path uses, because
   * waiting on every frame is the one pattern where a driver cannot hide its
   * encoding work. */
-@@ -3635,19 +4873,19 @@ static void eng_encode_and_commit(id<MTLTexture> present_dst)
+@@ -3635,19 +4924,19 @@ static void eng_encode_and_commit(id<MTLTexture> present_dst)
              if (s_headless) {
                  dst = s_offscreen;
              } else {
@@ -4658,10 +5191,12 @@ index 55fbb051..d85cb924 100644
          id<MTLCommandBuffer> cb = [s_queue commandBuffer];
          if (!cb || (s_eng_stage_used && !stage)) {
              s_eng_encoding_failed = 1;
-@@ -3657,6 +4895,17 @@ static void eng_encode_and_commit(id<MTLTexture> present_dst)
+@@ -3657,13 +4946,40 @@ static void eng_encode_and_commit(id<MTLTexture> present_dst)
          const uint64_t ft_e0 = PS3_FT_ON() ? ps3_ft_now() : 0;
          const u32 ft_nrec = s_eng_rec_count;
          eng_encode_records(cb, stage);
+-        if (present_dst && dst) eng_blit_to_display(cb, present_dst, dst);
+-        if (drawable) { fps_track_drawable(drawable); [cb presentDrawable:drawable]; }
 +        if (stage) {
 +            const int used = s_eng_stage_cur;
 +            atomic_store(&s_eng_stage_busy[used], 1);
@@ -4673,10 +5208,35 @@ index 55fbb051..d85cb924 100644
 +            s_eng_stage = NULL;
 +            s_eng_stage_cap = 0;
 +        }
-         if (present_dst && dst) eng_blit_to_display(cb, present_dst, dst);
-         if (drawable) { fps_track_drawable(drawable); [cb presentDrawable:drawable]; }
++        /* The drawable is presented only when the present pass drew into it:
++         * after an early return its contents are undefined (DontCare). */
++        int drew = 0;
++        if (present_dst && dst) drew = eng_blit_to_display(cb, present_dst, dst);
++        if (drawable && drew) { fps_track_drawable(drawable); [cb presentDrawable:drawable]; }
          if (ft_e0) ps3_ft_span(PS3_FT_GPU_ENCODE, 0, present_dst ? 1u : 0u, ft_nrec, ft_e0, ps3_ft_now());
-@@ -3701,13 +4950,33 @@ static void eng_encode_and_commit(id<MTLTexture> present_dst)
+         if (windowed_present) {
+             dispatch_semaphore_t sem = s_inflight;
+-            [cb addCompletedHandler:^(id<MTLCommandBuffer> _unused) {
+-                (void)_unused;
++            const int reduced = drew && s_eng_ds_frame;
++            [cb addCompletedHandler:^(id<MTLCommandBuffer> done) {
++                /* A frame that failed on the GPU was presented with undefined
++                 * contents; say so (a few times), and after three failures in a
++                 * row on Lanczos-reduced frames stop reducing. */
++                if ([done status] == MTLCommandBufferStatusError) {
++                    static int n;
++                    if (PS3_LOG_FIRST(n, 8))
++                        fprintf(stderr, "[rsx engine/metal] windowed frame failed on the GPU: %s (code %ld)\n",
++                                [[[done error] localizedDescription] UTF8String], (long)[[done error] code]);
++                    const int run = __atomic_add_fetch(&s_eng_gpu_fail_run, 1, __ATOMIC_ACQ_REL);
++                    if (reduced && run >= 3) downscale_fail("the GPU failed three reduced frames in a row");
++                } else {
++                    __atomic_store_n(&s_eng_gpu_fail_run, 0, __ATOMIC_RELEASE);
++                }
+                 dispatch_semaphore_signal(sem);
+             }];
+             [cb commit];
+@@ -3701,13 +5017,33 @@ static void eng_encode_and_commit(id<MTLTexture> present_dst)
          }
          s_eng_rec_count  = 0;
          s_eng_stage_used = 0;
@@ -4711,7 +5271,7 @@ index 55fbb051..d85cb924 100644
  {
      const char* path = getenv("PS3RECOMP_METAL_FRAME_DUMP");
      if (!path || !*path) return;
-@@ -3730,6 +4999,17 @@ static void eng_dump_frame(id<MTLTexture> src)
+@@ -3730,6 +5066,17 @@ static void eng_dump_frame(id<MTLTexture> src)
      }
      [src getBytes:rgba bytesPerRow:w * 4
        fromRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0];
@@ -4729,7 +5289,7 @@ index 55fbb051..d85cb924 100644
      FILE* f = fopen(path, "wb");
      if (f) {
          fprintf(f, "P6\n%zu %zu\n255\n", w, h);
-@@ -3751,7 +5031,7 @@ static void eng_present(void* user, u32 surface)
+@@ -3751,7 +5098,7 @@ static void eng_present(void* user, u32 surface)
      id<MTLTexture> src = eng_obj(surface);
      if (!src) { eng_encode_and_commit(nil); return; }
      eng_encode_and_commit(src);
@@ -4738,7 +5298,7 @@ index 55fbb051..d85cb924 100644
  }
  
  static void eng_readback(void* user, u32 surface, u32 x, u32 y, u32 w, u32 h,
-@@ -3760,8 +5040,22 @@ static void eng_readback(void* user, u32 surface, u32 x, u32 y, u32 w, u32 h,
+@@ -3760,8 +5107,22 @@ static void eng_readback(void* user, u32 surface, u32 x, u32 y, u32 w, u32 h,
      (void)user;
      id<MTLTexture> t = eng_obj(surface);
      if (!t || !out || !out_pitch || !w || !h) return;
@@ -4762,7 +5322,7 @@ index 55fbb051..d85cb924 100644
      [t getBytes:out bytesPerRow:out_pitch
       fromRegion:MTLRegionMake2D(x, y, w, h) mipmapLevel:0];
      if (ft_t0) ps3_ft_span(PS3_FT_READBACK, 0, w, h, ft_t0, ps3_ft_now());
-@@ -3771,8 +5065,29 @@ static void eng_readback(void* user, u32 surface, u32 x, u32 y, u32 w, u32 h,
+@@ -3771,8 +5132,29 @@ static void eng_readback(void* user, u32 surface, u32 x, u32 y, u32 w, u32 h,
   * requested rectangle to CPU-coherent shared storage. Resolving only the ROI
   * would rescale the source and change its coordinates. Never expose bytes
   * until both the resolve and the copy have completed successfully. */
@@ -4792,7 +5352,7 @@ index 55fbb051..d85cb924 100644
  {
      id<MTLTexture> src = eng_obj(depth);
      if (!s_dev || !s_queue || !src || !out || !w || !h ||
-@@ -3793,8 +5108,8 @@ static int eng_depth_readback(void* user, u32 depth, u32 x, u32 y, u32 w, u32 h,
+@@ -3793,8 +5175,8 @@ static int eng_depth_readback(void* user, u32 depth, u32 x, u32 y, u32 w, u32 h,
          id<MTLBuffer> staging = [s_dev newBufferWithLength:copy_pitch * h
                                                   options:MTLResourceStorageModeShared];
          if (!staging || ![staging contents]) return -1;
@@ -4803,7 +5363,7 @@ index 55fbb051..d85cb924 100644
          if (!snap) return -1;
          eng_encode_and_commit(nil);
          if (!s_eng_checked_completed) { eng_obj_release(user, snap); return -1; }
-@@ -3822,6 +5137,87 @@ static int eng_depth_readback(void* user, u32 depth, u32 x, u32 y, u32 w, u32 h,
+@@ -3822,6 +5204,87 @@ static int eng_depth_readback(void* user, u32 depth, u32 x, u32 y, u32 w, u32 h,
      }
  }
  
@@ -4891,7 +5451,7 @@ index 55fbb051..d85cb924 100644
  static const rsx_draw_backend s_engine_backend = {
      .user                 = NULL,
      .init                 = eng_init,
-@@ -3838,6 +5234,7 @@ static int eng_depth_readback(void* user, u32 depth, u32 x, u32 y, u32 w, u32 h,
+@@ -3838,6 +5301,7 @@ static int eng_depth_readback(void* user, u32 depth, u32 x, u32 y, u32 w, u32 h,
      .depth_target_create  = eng_depth_target_create,
      .depth_target_release = eng_obj_release,
      .depth_snapshot       = eng_depth_snapshot,
@@ -4899,7 +5459,7 @@ index 55fbb051..d85cb924 100644
      .depth_readback       = eng_depth_readback,
      .color_snapshot       = eng_color_snapshot,
      .color_snapshot_rect  = eng_color_snapshot_rect,
-@@ -3846,6 +5243,7 @@ static int eng_depth_readback(void* user, u32 depth, u32 x, u32 y, u32 w, u32 h,
+@@ -3846,6 +5310,7 @@ static int eng_depth_readback(void* user, u32 depth, u32 x, u32 y, u32 w, u32 h,
      .bind_targets         = eng_bind_targets,
      .bind_pipeline        = eng_bind_pipeline,
      .bind_vs_constants    = eng_bind_vs_constants,
@@ -4907,7 +5467,7 @@ index 55fbb051..d85cb924 100644
      .bind_ps_constants    = eng_bind_ps_constants,
      .bind_textures        = eng_bind_textures,
      .bind_vertex_textures = eng_bind_vertex_textures,
-@@ -3857,6 +5255,10 @@ static int eng_depth_readback(void* user, u32 depth, u32 x, u32 y, u32 w, u32 h,
+@@ -3857,6 +5322,10 @@ static int eng_depth_readback(void* user, u32 depth, u32 x, u32 y, u32 w, u32 h,
      .clear_depth_stencil  = eng_clear_depth_stencil,
      .present              = eng_present,
      .readback             = eng_readback,
@@ -4918,7 +5478,7 @@ index 55fbb051..d85cb924 100644
  };
  
  /* ---- public API ---------------------------------------------------------- */
-@@ -3869,6 +5271,10 @@ int rsx_metal_backend_init(u32 width, u32 height, const char* title)
+@@ -3869,6 +5338,10 @@ int rsx_metal_backend_init(u32 width, u32 height, const char* title)
  
          const char* hl = getenv("PS3RECOMP_METAL_HEADLESS");
          s_headless = (hl && *hl && *hl != '0');
@@ -4929,7 +5489,7 @@ index 55fbb051..d85cb924 100644
  
          s_dev = MTLCreateSystemDefaultDevice();
          if (!s_dev) {
-@@ -3943,6 +5349,28 @@ int rsx_metal_backend_init(u32 width, u32 height, const char* title)
+@@ -3943,6 +5416,28 @@ int rsx_metal_backend_init(u32 width, u32 height, const char* title)
          } else {
              rsx_set_backend(&s_backend_vtable);
          }
@@ -4958,7 +5518,7 @@ index 55fbb051..d85cb924 100644
          fprintf(stderr, "[RSX metal] %s on %s (%ux%u), guest shaders %s, %s path\n",
                  s_headless ? "headless" : "windowed",
                  [[s_dev name] UTF8String], s_width, s_height,
-@@ -3999,6 +5427,12 @@ void rsx_metal_backend_shutdown(void)
+@@ -3999,6 +5494,12 @@ void rsx_metal_backend_shutdown(void)
          s_depth     = nil;
          s_queue     = nil;
          s_dev       = nil;
@@ -4971,7 +5531,7 @@ index 55fbb051..d85cb924 100644
          s_ready     = 0;
      }
  }
-@@ -4021,10 +5455,21 @@ static int pump_messages_impl(void)
+@@ -4021,10 +5522,21 @@ static int pump_messages_impl(void)
                                                  inMode:NSDefaultRunLoopMode
                                                 dequeue:YES];
              if (!ev) break;
@@ -4993,7 +5553,7 @@ index 55fbb051..d85cb924 100644
          if (input) {
              hic_tick(input);
              if (![s_window isKeyWindow]) hic_focus_lost(input);
-@@ -4071,8 +5516,8 @@ void rsx_metal_backend_present(void)
+@@ -4071,8 +5583,8 @@ void rsx_metal_backend_present(void)
          if (s_headless) {
              target = s_offscreen;
          } else {
@@ -5480,272 +6040,6 @@ index 2f79ae73..986bf061 100644
      check(seen_label[2] == 0x22u, "the RELEASE inside ACQUIRE+RELEASE wrote its label");
      if (!eq_put) {
          check(seen_get[1] == end_rel1, "get is past the RELEASE when its label is seen");
-diff --git a/libs/video/tests/test_gcm_overrun.c b/libs/video/tests/test_gcm_overrun.c
-new file mode 100644
-index 00000000..d222db61
---- /dev/null
-+++ b/libs/video/tests/test_gcm_overrun.c
-@@ -0,0 +1,155 @@
-+/* A title's `current` reaching its ring's end is not yet an overrun (cellGcmSys.c).
-+ *
-+ * The title fills the ring, then calls its callback, and for that instant `current`
-+ * reads end. A drain landing there used to recycle the ring on the title's behalf,
-+ * dropping every queued command, flip included, and PES 2013 then waited for that flip
-+ * forever. A title that really is stuck at end, as AMGL's callback leaves it, must still
-+ * be recycled, and an end position that keeps moving is not stuck.
-+ *
-+ * clang -std=gnu17 -w -I include -I libs/video -I runtime/platform -Wl,-dead_strip
-+ *   -ffunction-sections -fdata-sections -pthread libs/video/tests/test_gcm_overrun.c
-+ *   runtime/platform/win32_compat.c -o /tmp/test_gcm_overrun
-+ */
-+#include "../cellGcmSys.c"
-+#include <unistd.h>
-+#include <stdio.h>
-+#include <stdlib.h>
-+#include <string.h>
-+uint8_t* vm_base;
-+uint32_t ppu_vm_size;
-+int g_resv_store_active;
-+uint32_t g_ww_lo, g_ww_hi;
-+void ppu_resv_break_store(uint64_t ea) { (void)ea; }
-+void ps3_ww_report_inline(uint32_t a, uint64_t v, int w) { (void)a; (void)v; (void)w; }
-+int spu_coh_is_reserved(uint32_t a) { (void)a; return 0; }
-+void spu_coh_notify_write(uint32_t a) { (void)a; }
-+void spu_lockline_lock(void) {}
-+void spu_lockline_unlock(void) {}
-+ps3_guest_caller_fn g_ps3_guest_caller;
-+/* The walker's other consumers: no graphics backend, no lifted program. */
-+PPU_THREAD_LOCAL ppu_context* g_active_ctx;
-+u32 g_rsx_last_reference;
-+void (*g_spu_put_hook)(uint32_t ea, uint32_t size);
-+void ppu_dump_bctrl_ring(uint32_t n, const char* why) { (void)n; (void)why; }
-+void ppu_dump_guest_stack(ppu_context* c, const char* why) { (void)c; (void)why; }
-+void rsx_state_init(rsx_state* state) { (void)state; }
-+int  rsx_process_method(rsx_state* state, u32 method, u32 data) { (void)state; (void)method; (void)data; return 0; }
-+int  rsx_draw_engine_enabled(void) { return 1; }
-+/* The label each RELEASE found when it reached the engine, which is before it lands:
-+ * a title reads what the RSX rendered as soon as the label moves. */
-+static u32 engine_release_label[8], engine_release_n;
-+void rsx_draw_engine_method(u32 method, u32 arg)
-+{
-+    (void)arg;
-+    if (method == 0x6Cu && engine_release_n < 8)
-+        engine_release_label[engine_release_n++] = vm_read32(GCM_LABEL_GUEST_BASE + 0x10u);
-+}
-+void rsx_draw_engine_note_flip(u32 buffer_id) { (void)buffer_id; }
-+void rsx_draw_engine_guest_read(u32 l, u32 o, u32 p, u32 w, u32 h) { (void)l; (void)o; (void)p; (void)w; (void)h; }
-+void rsx_draw_engine_guest_wrote(u32 l, u32 o, u32 p, u32 w, u32 h) { (void)l; (void)o; (void)p; (void)w; (void)h; }
-+int  rsx_live_draw_enabled(void) { return 0; }
-+void rsx_live_draw_method(u32 method, u32 arg) { (void)method; (void)arg; }
-+int  rsx_live_draw_blit(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 w, u32 h)
-+{ (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)w; (void)h; return 0; }
-+void rsx_live_draw_note_resolve(u32 a, u32 b, u32 c, u32 d) { (void)a; (void)b; (void)c; (void)d; }
-+int  rsx_live_draw_resolve_blit(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g, u32 h,
-+                                u32 i, u32 j, u32 k, u32 l)
-+{ (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)g; (void)h; (void)i; (void)j; (void)k; (void)l; return 0; }
-+
-+#define SEMA_OFF  0x10u
-+#define LABEL_EA  (GCM_LABEL_GUEST_BASE + SEMA_OFF)
-+
-+/* Records the label and get each time a probe user command runs. */
-+static u32 seen_get[8], seen_label[8], seen_n;
-+void rsx_raise_user_cmd(uint32_t arg)
-+{
-+    if (arg < 8) {
-+        seen_get[arg] = vm_read32(GCM_CONTROL_GUEST_ADDR + 4);
-+        seen_label[arg] = vm_read32(LABEL_EA);
-+        seen_n++;
-+    }
-+}
-+
-+#define IO_ADDR   0x00100000u
-+#define IO_SIZE   0x00100000u
-+#define CMD_SIZE  0x00010000u
-+
-+static uint32_t g_heap = 0x00400000u;
-+static u32 host_alloc(u32 size, u32 align)
-+{
-+    if (!align) align = 4;
-+    g_heap = (g_heap + align - 1u) & ~(align - 1u);
-+    u32 r = g_heap;
-+    g_heap += size;
-+    return r;
-+}
-+static void gw32(uint32_t ea, uint32_t v)
-+{
-+    uint8_t* p = vm_base + ea;
-+    p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16); p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v;
-+}
-+static void host_w32(u32 ea, u32 v) { gw32(ea, v); }
-+
-+static int fails;
-+static void check(int ok, const char* what)
-+{
-+    printf("[%s] %s\n", ok ? "PASS" : "FAIL", what);
-+    fails += !ok;
-+}
-+
-+/* An incrementing method header: count words, subchannel subch. */
-+static u32 put_cmd(u32 io, u32 subch, u32 method, u32 count, const u32* args)
-+{
-+    gw32(IO_ADDR + io, (count << 18) | (subch << 13) | method);
-+    for (u32 i = 0; i < count; i++) gw32(IO_ADDR + io + 4 + i * 4, args[i]);
-+    return io + 4 + count * 4;
-+}
-+static u32 put_probe(u32 io, u32 arg) { return put_cmd(io, 7, 0x0B00u, 1, &arg); }
-+
-+int main(void)
-+{
-+    setvbuf(stdout, NULL, _IONBF, 0);
-+    const uint32_t vm_size = ppu_hle_inject_base + 0x10000u;
-+    vm_base = (uint8_t*)calloc(1, vm_size);
-+    if (!vm_base) { puts("FAIL: guest VM alloc"); return 1; }
-+    ppu_vm_size = vm_size;
-+
-+    u32 ctx_out = host_alloc(4, 4);
-+    (void)cellGcmSetupContext(ctx_out, CMD_SIZE, IO_SIZE, IO_ADDR, host_alloc, host_w32);
-+    const uint32_t ctrl = (uint32_t)(uintptr_t)cellGcmGetControlRegister();
-+    const u32 ctx = vm_read32(ctx_out);
-+    const u32 begin = vm_read32(ctx + 0), end = vm_read32(ctx + 4);
-+    check(begin && end > begin, "the title has a ring");
-+
-+    /* A queued command, and the title's current at the end of the ring. */
-+    u32 io = put_probe(0, 0);
-+    s_fifo_getoff = 0;
-+    vm_write32(ctrl + 4, 0);
-+    vm_write32(ctrl + 0, io);
-+    vm_write32(ctx + 8, end);
-+    cellGcm_rsx_process_fifo();
-+    check(vm_read32(ctx + 8) == end, "the first pass at end leaves the ring alone");
-+
-+    /* Still there, but it moved: the title is working, not stuck. */
-+    usleep(300000);
-+    vm_write32(ctx + 8, end + 4);
-+    cellGcm_rsx_process_fifo();
-+    check(vm_read32(ctx + 8) == end + 4, "a current that moved restarts the wait");
-+
-+    /* Back inside the ring: the callback ran, nothing is remembered. */
-+    vm_write32(ctx + 8, begin + 16);
-+    cellGcm_rsx_process_fifo();
-+    usleep(300000);
-+    vm_write32(ctx + 8, end);
-+    cellGcm_rsx_process_fifo();
-+    check(vm_read32(ctx + 8) == end, "leaving end and coming back starts over");
-+
-+    /* Unmoved past the wait: wedged, and recovered. */
-+    usleep(300000);
-+    cellGcm_rsx_process_fifo();
-+    check(vm_read32(ctx + 8) == begin, "a current stuck at end is recycled");
-+
-+    printf("[gcm_overrun] %s (%d failed)\n", fails ? "FAIL" : "PASS", fails);
-+    free(vm_base);
-+    return fails ? 1 : 0;
-+}
-diff --git a/libs/video/tests/test_metal_downscale.m b/libs/video/tests/test_metal_downscale.m
-new file mode 100644
-index 00000000..62ef4085
---- /dev/null
-+++ b/libs/video/tests/test_metal_downscale.m
-@@ -0,0 +1,99 @@
-+/* PS3_DOWNSCALE in the Metal backend: the knob's spellings; the window fit;
-+ * and eng_lanczos, the reduction an internal picture larger than the window
-+ * goes through. A one-pixel checkerboard -- the finest detail a picture holds,
-+ * the kind that shimmers on edges -- reduced 3x must come out an even grey,
-+ * every source pixel weighed in; sampling (one source pixel per window pixel)
-+ * gives black or white. The same sizes reuse the output; a source a shader may
-+ * not read turns the option off. Needs a Metal device; no window.
-+ *
-+ *   clang -fobjc-arc -I include -I libs/video libs/video/tests/test_metal_downscale.m libs/video/rsx_texture_layout.c \
-+ *     -Wl,-dead_strip -framework Metal -framework Cocoa -framework QuartzCore \
-+ *     -o /tmp/test_metal_downscale && /tmp/test_metal_downscale
-+ */
-+#include "../rsx_metal_backend.m"
-+#include <assert.h>
-+
-+float cellAvconfExt_display_gamma(void) { return 1.0f; }
-+
-+static id<MTLTexture> checker(NSUInteger w, NSUInteger h, MTLTextureUsage usage)
-+{
-+    MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-+                                                                                  width:w height:h mipmapped:NO];
-+    td.usage = usage;
-+    td.storageMode = MTLStorageModeShared;
-+    id<MTLTexture> t = [s_dev newTextureWithDescriptor:td];
-+    uint8_t* px = malloc(w * h * 4);
-+    for (NSUInteger y = 0; y < h; y++)
-+        for (NSUInteger x = 0; x < w; x++) {
-+            uint8_t* p = px + (y * w + x) * 4;
-+            const uint8_t v = ((x ^ y) & 1) ? 255 : 0;
-+            p[0] = p[1] = p[2] = v; p[3] = 255;
-+        }
-+    [t replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0 withBytes:px bytesPerRow:w * 4];
-+    free(px);
-+    return t;
-+}
-+
-+int main(void)
-+{
-+    @autoreleasepool {
-+        /* the knob: on unless 0 or off */
-+        assert(downscale_from(NULL) == 1 && downscale_from("") == 1);
-+        assert(downscale_from("0") == 0 && downscale_from("off") == 0 && downscale_from("OFF") == 0);
-+        assert(downscale_from("1") == 1 && downscale_from("lanczos") == 1 && downscale_from("what") == 1);
-+
-+        /* the fit: the largest guest-shaped size in the view's pixels */
-+        double fw, fh;
-+        wm_fit(1920, 1080, 3840, 2160, &fw, &fh); assert(fw == 1920 && fh == 1080);
-+        wm_fit(1920, 1200, 3840, 2160, &fw, &fh); assert(fw == 1920 && fh == 1080);   /* bars top and bottom */
-+        wm_fit(1000, 1080, 1280, 720, &fw, &fh);  assert(fw == 1000 && fh == 563);
-+        wm_fit(0, 1080, 1280, 720, &fw, &fh);     assert(fw == 0 && fh == 0);
-+
-+        s_dev = MTLCreateSystemDefaultDevice();
-+        if (!s_dev) { puts("test_metal_downscale: no Metal device, skipped"); return 0; }
-+        s_queue = [s_dev newCommandQueue];
-+
-+        id<MTLTexture> src = checker(192, 108, MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget);
-+        id<MTLCommandBuffer> cb = [s_queue commandBuffer];
-+        id<MTLTexture> out = eng_lanczos(cb, src, 64, 36);
-+        if (!out) {
-+            assert(!s_down_on);
-+            puts("test_metal_downscale: MetalPerformanceShaders not available here, fallback checked");
-+            return 0;
-+        }
-+        assert([out width] == 64 && [out height] == 36 && [out storageMode] == MTLStorageModePrivate);
-+        id<MTLTexture> back = checker(64, 36, MTLTextureUsageShaderRead);
-+        id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
-+        [b copyFromTexture:out toTexture:back];
-+        [b endEncoding];
-+        [cb commit];
-+        [cb waitUntilCompleted];
-+        assert([cb status] == MTLCommandBufferStatusCompleted);
-+        uint8_t* px = malloc(64 * 36 * 4);
-+        [back getBytes:px bytesPerRow:64 * 4 fromRegion:MTLRegionMake2D(0, 0, 64, 36) mipmapLevel:0];
-+        int lo = 255, hi = 0;
-+        for (int y = 4; y < 32; y++)            /* away from the edges' clamping */
-+            for (int x = 4; x < 60; x++) {
-+                const int v = px[(y * 64 + x) * 4 + 1];
-+                if (v < lo) lo = v;
-+                if (v > hi) hi = v;
-+            }
-+        free(px);
-+        printf("test_metal_downscale: checkerboard 192x108 -> 64x36 gives %d..%d\n", lo, hi);
-+        assert(lo > 80 && hi < 175);            /* grey, not black or white pixels */
-+
-+        /* the same sizes reuse the output */
-+        cb = [s_queue commandBuffer];
-+        assert(eng_lanczos(cb, src, 64, 36) == out);
-+        [cb commit]; [cb waitUntilCompleted];
-+
-+        /* a source a shader may not read: it gives up and stays off */
-+        id<MTLTexture> bad = checker(192, 108, MTLTextureUsageRenderTarget);
-+        cb = [s_queue commandBuffer];
-+        assert(eng_lanczos(cb, bad, 64, 36) == nil);
-+        assert(!s_down_on);
-+        [cb commit]; [cb waitUntilCompleted];
-+        puts("test_metal_downscale: ok");
-+    }
-+    return 0;
-+}
 diff --git a/libs/video/tests/test_metal_present_post.m b/libs/video/tests/test_metal_present_post.m
 index 357ec012..2b7eea00 100644
 --- a/libs/video/tests/test_metal_present_post.m
@@ -5943,264 +6237,6 @@ index 357ec012..2b7eea00 100644
          puts("test_metal_present_post: ok");
      }
      return 0;
-diff --git a/libs/video/tests/test_metal_res_scale.m b/libs/video/tests/test_metal_res_scale.m
-new file mode 100644
-index 00000000..0e6411bc
---- /dev/null
-+++ b/libs/video/tests/test_metal_res_scale.m
-@@ -0,0 +1,163 @@
-+/* PS3_RES_SCALE in the Metal backend: the knob's spellings; targets made at
-+ * the scaled size (a seeded colour target filled nearest-neighbour); views and
-+ * copies that inherit it; viewports and scissors that follow; and readbacks,
-+ * colour and depth, that hand the guest its own pixels back (also at 1.5);
-+ * a depth target read as A8R8G8B8 converted at the guest's size from the
-+ * scaled depth; and the frame dump's box filter. Needs a Metal device; no
-+ * window.
-+ *
-+ *   clang -fobjc-arc -I include -I libs/video libs/video/tests/test_metal_res_scale.m libs/video/rsx_texture_layout.c \
-+ *     -Wl,-dead_strip -framework Metal -framework Cocoa -framework QuartzCore \
-+ *     -o /tmp/test_metal_res_scale && /tmp/test_metal_res_scale
-+ */
-+#include "../rsx_metal_backend.m"
-+#include <assert.h>
-+#include <math.h>
-+
-+float cellAvconfExt_display_gamma(void) { return 1.0f; }
-+
-+static const char* fixture =
-+"#include <metal_stdlib>\nusing namespace metal;\n"
-+"struct V { float4 p [[position]]; };\n"
-+"vertex V vs(uint i [[vertex_id]]) { float2 p[3]={float2(-1,-1),float2(3,-1),float2(-1,3)}; return {float4(p[i],0,1)}; }\n"
-+/* every 2x2 block one value: the guest pixel it stands for */
-+"struct D { float d [[depth(any)]]; }; fragment D fs(V v [[stage_in]]) {"
-+" return {0.125f + floor(v.p.x * 0.5f) * 0.125f + floor(v.p.y * 0.5f) * 0.0625f}; }\n";
-+static float expected(u32 x, u32 y) { return .125f + x * .125f + y * .0625f; }
-+
-+int main(void)
-+{
-+    @autoreleasepool {
-+        /* the knob */
-+        assert(res_scale_from(NULL) == 1.0f && res_scale_from("") == 1.0f);
-+        assert(res_scale_from("2") == 2.0f && res_scale_from("1.5") == 1.5f && res_scale_from("2x") == 2.0f);
-+        assert(res_scale_from("1080p") == 1.5f && res_scale_from("1440P") == 2.0f && res_scale_from("4k") == 3.0f);
-+        assert(res_scale_from("720p") == 1.0f && res_scale_from("1.6") == 1.5f);   /* quarter steps */
-+        assert(res_scale_from("5") == 1.0f && res_scale_from("0.5") == 1.0f && res_scale_from("big") == 1.0f);
-+
-+        s_dev = MTLCreateSystemDefaultDevice();
-+        if (!s_dev) { puts("test_metal_res_scale: no Metal device, skipped"); return 0; }
-+        s_queue = [s_dev newCommandQueue];
-+        s_res_scale = 2.0f;
-+        assert(res_px(4) == 8 && res_px(3) == 6 && res_px(0) == 0);
-+        assert(eng_init(NULL, 4, 3) == 0);
-+
-+        /* a seeded colour target: 8x6, each guest pixel a 2x2 block */
-+        u8 seed[4 * 3 * 4];
-+        for (u32 i = 0; i < 12; i++) { seed[i * 4] = (u8)(i * 20); seed[i * 4 + 1] = (u8)(255 - i); seed[i * 4 + 2] = 7; seed[i * 4 + 3] = 255; }
-+        const u32 color = eng_color_target_create(NULL, RSX_BE_FMT_R8G8B8A8, 4, 3, seed, 16);
-+        assert(color && eng_obj_is_scaled(color));
-+        assert([eng_obj(color) width] == 8 && [eng_obj(color) height] == 6);
-+        u8 big[8 * 6 * 4];
-+        [eng_obj(color) getBytes:big bytesPerRow:32 fromRegion:MTLRegionMake2D(0, 0, 8, 6) mipmapLevel:0];
-+        assert(!memcmp(big + (3 * 8 + 5) * 4, seed + (1 * 4 + 2) * 4, 4));   /* (5,3) -> guest (2,1) */
-+        /* read back at the guest's size: the seed, exactly */
-+        u8 back[4 * 3 * 4];
-+        memset(back, 0xCD, sizeof back);
-+        eng_readback(NULL, color, 0, 0, 4, 3, back, 16);
-+        assert(!memcmp(back, seed, sizeof seed));
-+        u8 roi[2 * 2 * 4 + 4];
-+        memset(roi, 0xCD, sizeof roi);
-+        eng_readback(NULL, color, 1, 1, 2, 2, roi, 12);                     /* padded rows */
-+        assert(!memcmp(roi, seed + (1 * 4 + 1) * 4, 8) && !memcmp(roi + 12, seed + (2 * 4 + 1) * 4, 8));
-+        assert(roi[8] == 0xCD);
-+
-+        /* a view and a copy of it are scaled too; a guest texture is not */
-+        const u32 view = eng_surface_view(NULL, color, 0xAAE4, 0x85);
-+        assert(view && eng_obj_is_scaled(view));
-+        const u32 copy = eng_color_snapshot(NULL, color);
-+        assert(copy && eng_obj_is_scaled(copy) && [eng_obj(copy) width] == 8);
-+        const u32 tex = eng_texture_create(NULL, RSX_BE_FMT_R8G8B8A8, 4, 3, 1, 1, 0xAAE4, 0x85);
-+        assert(tex && !eng_obj_is_scaled(tex) && [eng_obj(tex) width] == 4);
-+
-+        /* viewport and scissor follow the targets */
-+        eng_set_viewport(NULL, 0.0f, 0.0f, 4.0f, 3.0f);
-+        assert(s_eng_pending.vp[2] == 8.0f && s_eng_pending.vp[3] == 6.0f);
-+        eng_set_scissor(NULL, 1, 1, 3, 2);
-+        assert(s_eng_pending.sc[0] == 2 && s_eng_pending.sc[1] == 2 && s_eng_pending.sc[2] == 6 && s_eng_pending.sc[3] == 4);
-+
-+        /* depth: 8x6, its snapshot 8x6, its readback the guest's 4x3 */
-+        const u32 depth = eng_depth_target_create(NULL, 4, 3);
-+        assert(depth && eng_obj_is_scaled(depth) && [eng_obj(depth) width] == 8);
-+        NSError* err = nil;
-+        id<MTLLibrary> lib = [s_dev newLibraryWithSource:@(fixture) options:nil error:&err];
-+        assert(lib);
-+        MTLRenderPipelineDescriptor* pd = [MTLRenderPipelineDescriptor new];
-+        pd.vertexFunction = [lib newFunctionWithName:@"vs"];
-+        pd.fragmentFunction = [lib newFunctionWithName:@"fs"];
-+        pd.depthAttachmentPixelFormat = MTL_DEPTH_FORMAT; pd.stencilAttachmentPixelFormat = MTL_DEPTH_FORMAT;
-+        id<MTLRenderPipelineState> pso = [s_dev newRenderPipelineStateWithDescriptor:pd error:&err];
-+        assert(pso);
-+        MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
-+        rp.depthAttachment.texture = eng_obj(depth); rp.depthAttachment.loadAction = MTLLoadActionClear;
-+        rp.depthAttachment.clearDepth = 1; rp.depthAttachment.storeAction = MTLStoreActionStore;
-+        rp.stencilAttachment.texture = eng_obj(depth); rp.stencilAttachment.loadAction = MTLLoadActionClear;
-+        rp.stencilAttachment.storeAction = MTLStoreActionStore;
-+        id<MTLCommandBuffer> cb = [s_queue commandBuffer];
-+        id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:rp];
-+        MTLDepthStencilDescriptor* dsd = [MTLDepthStencilDescriptor new];
-+        dsd.depthCompareFunction = MTLCompareFunctionAlways; dsd.depthWriteEnabled = YES;
-+        [e setRenderPipelineState:pso]; [e setDepthStencilState:[s_dev newDepthStencilStateWithDescriptor:dsd]];
-+        [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
-+        [e endEncoding]; [cb commit]; [cb waitUntilCompleted];
-+        assert(cb.status == MTLCommandBufferStatusCompleted);
-+        const u32 snap = eng_depth_snapshot(NULL, depth, 4, 3);
-+        assert(snap && eng_obj_is_scaled(snap) && [eng_obj(snap) width] == 8 && [eng_obj(snap) height] == 6);
-+        float dz[4 * 3 + 2];
-+        for (int i = 0; i < 14; i++) dz[i] = -7.0f;
-+        assert(eng_depth_readback(NULL, depth, 0, 0, 4, 3, dz, 16) == 0);
-+        for (u32 y = 0; y < 3; y++)
-+            for (u32 x = 0; x < 4; x++) assert(fabsf(dz[y * 4 + x] - expected(x, y)) < 1e-6f);
-+        float droi[3] = { -9, -9, -9 };
-+        assert(eng_depth_readback(NULL, depth, 2, 1, 2, 1, droi, 12) == 0);
-+        assert(fabsf(droi[0] - expected(2, 1)) < 1e-6f && fabsf(droi[1] - expected(3, 1)) < 1e-6f && droi[2] == -9);
-+        /* read as A8R8G8B8 (a shadow map the game samples as colour): the
-+         * guest's 4x3, each texel the packed depth of its guest pixel */
-+        const u32 argb = eng_depth_to_argb(NULL, depth, 0, 4, 3);
-+        assert(argb && !eng_obj_is_scaled(argb) && [eng_obj(argb) width] == 4 && [eng_obj(argb) height] == 3);
-+        eng_encode_and_commit(nil);
-+        assert(!s_eng_encoding_failed);
-+        { id<MTLBuffer> buf = [s_dev newBufferWithLength:4 * 4 * 3 options:MTLResourceStorageModeShared];
-+          id<MTLCommandBuffer> c2 = [s_queue commandBuffer];
-+          id<MTLBlitCommandEncoder> b = [c2 blitCommandEncoder];
-+          [b copyFromTexture:eng_obj(argb) sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
-+                  sourceSize:MTLSizeMake(4, 3, 1) toBuffer:buf destinationOffset:0
-+      destinationBytesPerRow:16 destinationBytesPerImage:48];
-+          [b endEncoding]; [c2 commit]; [c2 waitUntilCompleted];
-+          const u8* px = (const u8*)[buf contents];
-+          for (u32 y = 0; y < 3; y++)
-+              for (u32 x = 0; x < 4; x++) {
-+                  const u32 v = (u32)fminf(expected(x, y) * 16777215.0f + 0.5f, 16777215.0f);
-+                  const u8* q = px + (y * 4 + x) * 4;      /* R = [15:8], G = [7:0], A = [23:16] */
-+                  assert(q[0] == ((v >> 8) & 0xFF) && q[1] == (v & 0xFF) && q[2] == 0 && q[3] == (v >> 16));
-+              }
-+        }
-+
-+        /* at 1.5 a seed goes up and comes back exactly */
-+        s_res_scale = 1.5f;
-+        assert(res_px(4) == 6 && res_px(3) == 5);
-+        const u32 c15 = eng_color_target_create(NULL, RSX_BE_FMT_R8G8B8A8, 4, 3, seed, 16);
-+        assert(c15 && eng_obj_is_scaled(c15) && [eng_obj(c15) width] == 6 && [eng_obj(c15) height] == 5);
-+        memset(back, 0xCD, sizeof back);
-+        eng_readback(NULL, c15, 0, 0, 4, 3, back, 16);
-+        assert(!memcmp(back, seed, sizeof seed));
-+        eng_set_scissor(NULL, 0, 0, 4, 3);
-+        assert(s_eng_pending.sc[2] == 6 && s_eng_pending.sc[3] == 5);   /* to the target's edge */
-+        s_res_scale = 2.0f;
-+
-+        /* the frame dump's box filter: each 2x2 block averaged */
-+        { u8 img[4 * 2 * 4];
-+          for (int i = 0; i < 8; i++) { img[i * 4] = (u8)(i * 10); img[i * 4 + 1] = 100; img[i * 4 + 2] = (u8)(i < 4 ? 0 : 255); img[i * 4 + 3] = 255; }
-+          eng_res_box_down(img, 4, 2, 2, 1);
-+          assert(img[0] == 25 && img[1] == 100 && img[2] == 128 && img[4] == 45); }
-+
-+        /* at 1, nothing is scaled */
-+        s_res_scale = 1.0f;
-+        const u32 plain = eng_color_target_create(NULL, RSX_BE_FMT_R8G8B8A8, 4, 3, seed, 16);
-+        assert(plain && !eng_obj_is_scaled(plain) && [eng_obj(plain) width] == 4);
-+        eng_set_viewport(NULL, 0.0f, 0.0f, 4.0f, 3.0f);
-+        assert(s_eng_pending.vp[2] == 4.0f);
-+        puts("test_metal_res_scale: ok");
-+    }
-+    return 0;
-+}
-diff --git a/libs/video/tests/test_nv308a_inline.c b/libs/video/tests/test_nv308a_inline.c
-new file mode 100644
-index 00000000..d272452a
---- /dev/null
-+++ b/libs/video/tests/test_nv308a_inline.c
-@@ -0,0 +1,83 @@
-+/* NV308A image-from-CPU: cellGcmSetInlineTransfer sends up to 1792 words in one
-+ * burst, as methods 0x0400..0x1FFC. Words past 0x07FC used to be dropped: everything
-+ * after the first 1024 bytes of an upload stayed zero. PES 2013 uploads its fragment
-+ * programs this way, and its characters drew with the end of their programs missing.
-+ *
-+ * clang -std=gnu17 -I include -I libs/video libs/video/tests/test_nv308a_inline.c -Wl,-dead_strip
-+ *   -o /tmp/test_nv308a_inline && /tmp/test_nv308a_inline
-+ *   (gcc: -ffunction-sections -fdata-sections -Wl,--gc-sections)
-+ */
-+#include "../cellGcmSys.c"
-+#include <stdio.h>
-+#include <stdlib.h>
-+uint8_t* vm_base;
-+uint32_t ppu_vm_size;
-+int g_resv_store_active;
-+uint32_t g_ww_lo, g_ww_hi;
-+void ppu_resv_break_store(uint64_t ea) { (void)ea; }
-+void ps3_ww_report_inline(uint32_t a, uint64_t v, int w) { (void)a; (void)v; (void)w; }
-+int spu_coh_is_reserved(uint32_t a) { (void)a; return 0; }
-+void spu_coh_notify_write(uint32_t a) { (void)a; }
-+void spu_lockline_lock(void) {}
-+void spu_lockline_unlock(void) {}
-+ps3_guest_caller_fn g_ps3_guest_caller;
-+/* The rest of the walker's world: no graphics backend, no lifted program. */
-+PPU_THREAD_LOCAL ppu_context* g_active_ctx;
-+u32 g_rsx_last_reference;
-+void (*g_spu_put_hook)(uint32_t ea, uint32_t size);
-+void rsx_raise_user_cmd(uint32_t arg) { (void)arg; }
-+void ppu_dump_bctrl_ring(uint32_t n, const char* why) { (void)n; (void)why; }
-+void ppu_dump_guest_stack(ppu_context* c, const char* why) { (void)c; (void)why; }
-+void rsx_state_init(rsx_state* state) { (void)state; }
-+int  rsx_process_method(rsx_state* state, u32 method, u32 data) { (void)state; (void)method; (void)data; return 0; }
-+int  rsx_draw_engine_enabled(void) { return 1; }
-+void rsx_draw_engine_method(u32 method, u32 arg) { (void)method; (void)arg; }
-+void rsx_draw_engine_note_flip(u32 buffer_id) { (void)buffer_id; }
-+/* guest_read is defined below: it plays the engine's part. */
-+void rsx_draw_engine_guest_wrote(u32 l, u32 o, u32 p, u32 w, u32 h) { (void)l; (void)o; (void)p; (void)w; (void)h; }
-+int  rsx_live_draw_enabled(void) { return 0; }
-+void rsx_live_draw_method(u32 method, u32 arg) { (void)method; (void)arg; }
-+int  rsx_live_draw_blit(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 w, u32 h)
-+{ (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)w; (void)h; return 0; }
-+void rsx_live_draw_note_resolve(u32 a, u32 b, u32 c, u32 d) { (void)a; (void)b; (void)c; (void)d; }
-+int  rsx_live_draw_resolve_blit(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g, u32 h,
-+                                u32 i, u32 j, u32 k, u32 l)
-+{ (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)g; (void)h; (void)i; (void)j; (void)k; (void)l; return 0; }
-+
-+
-+#define LOCAL_BASE 0x00200000u      /* where "local memory" sits in the test's guest VM */
-+#define DST_OFF    0x00100000u
-+#define WORDS      1792u            /* NV308A's COLOR array: 0x0400..0x1FFC */
-+
-+void rsx_draw_engine_guest_read(u32 l, u32 o, u32 p, u32 w, u32 h)
-+{ (void)l; (void)o; (void)p; (void)w; (void)h; }
-+
-+int main(void)
-+{
-+    setvbuf(stdout, NULL, _IONBF, 0);
-+    const uint32_t vm_size = LOCAL_BASE + 0x00400000u;
-+    vm_base = (uint8_t*)calloc(1, vm_size);
-+    if (!vm_base) { puts("FAIL: guest VM alloc"); return 1; }
-+    ppu_vm_size = vm_size;
-+    ppu_hle_inject_base = vm_size;
-+    s_config.localAddress = LOCAL_BASE;
-+
-+    gcm_2d_method(2, 0x0184, 0xFEED0000u);          /* NV3062: destination in local memory */
-+    gcm_2d_method(2, 0x0304, 0x20002000u);          /* pitch 0x2000, both halves */
-+    gcm_2d_method(2, 0x030C, DST_OFF);
-+    gcm_2d_method(4, 0x0304, 0u);                   /* NV308A: point 0,0 */
-+    gcm_2d_method(4, 0x0308, (1u << 16) | WORDS);
-+    for (u32 i = 0; i < WORDS; i++)
-+        gcm_2d_method(4, 0x0400 + i * 4u, 0xA5000000u | i);
-+
-+    int fails = 0;
-+    for (u32 i = 0; i < WORDS; i++) {
-+        const u32 got = vm_read32(LOCAL_BASE + DST_OFF + i * 4u);
-+        if (got != (0xA5000000u | i)) {
-+            if (fails++ < 3) printf("FAIL: word %u = 0x%08X\n", i, got);
-+        }
-+    }
-+    printf("[nv308a_inline] %s (%d words wrong of %u)\n", fails ? "FAIL" : "PASS", fails, WORDS);
-+    free(vm_base);
-+    return fails ? 1 : 0;
-+}
 diff --git a/libs/video/tests/test_rsx_draw_engine.c b/libs/video/tests/test_rsx_draw_engine.c
 index aee6109f..e0276b15 100644
 --- a/libs/video/tests/test_rsx_draw_engine.c
@@ -6526,262 +6562,6 @@ index b2f93a7b..8690bfe8 100644
      test_swizzle_offset();
      test_log2_ceil();
      test_decode_argb_linear();
-diff --git a/libs/video/tests/test_texture_packs.c b/libs/video/tests/test_texture_packs.c
-new file mode 100644
-index 00000000..c0b9a8d8
---- /dev/null
-+++ b/libs/video/tests/test_texture_packs.c
-@@ -0,0 +1,250 @@
-+/*
-+ * ps3recomp - texture packs (PS3_MODS, PS3_MODS_DIR, PS3_MODS_DUMP) in the
-+ * draw engine: pack file names, the content key, pack order, the
-+ * replacement's upload and mips, what is refused, the DXT decode the dump
-+ * uses, and a guest texture replaced and dumped end to end through
-+ * eng_texture_upload. A stub backend stands in for the image files.
-+ *
-+ *   clang -std=gnu17 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -I include -I libs/video \
-+ *     -o /tmp/test_texture_packs libs/video/tests/test_texture_packs.c libs/video/rsx_dispatch.c \
-+ *     libs/video/rsx_vertex_compact.c libs/video/rsx_texture_layout.c libs/video/rsx_vp_decompiler.c \
-+ *     libs/video/rsx_fp_decompiler.c && /tmp/test_texture_packs
-+ *
-+ * The packs it makes go under $TMPDIR (else /tmp) and are removed at the end.
-+ */
-+#include "../rsx_draw_engine.c"
-+#include <assert.h>
-+#include <unistd.h>
-+
-+u8* vm_base;
-+u32 ppu_vm_size;
-+u32 cellGcmResolveLocated(int local, u32 offset) { return local ? (1u << 20) + offset : offset; }
-+u32 cellGcmResolveIO(u32 offset) { return offset; }
-+void cellGcm_replay_display_buffers_to_engine(void) {}
-+
-+/* ---- the stub backend ---------------------------------------------------- */
-+static struct {
-+    u32 next;
-+    u32 created_w, created_h, created_mips, created_fmt, created_remap, created_rsx_fmt;
-+    int n_create, n_upload, n_release;
-+    u32 up_w[16], up_h[16], up_mip[16];
-+    u8  first_texel[4];
-+    int n_load, n_save;
-+    char saved_path[700];
-+    u32 saved_w, saved_h;
-+    u8  saved_first[4];
-+} st;
-+
-+static u32 stub_create(void* u, rsx_be_format fmt, u32 w, u32 h, u32 mips, u32 faces, u32 remap, u32 rsx_fmt)
-+{
-+    st.n_create++;
-+    st.created_w = w; st.created_h = h; st.created_mips = mips; st.created_fmt = fmt;
-+    st.created_remap = remap; st.created_rsx_fmt = rsx_fmt;
-+    return ++st.next;
-+}
-+static void stub_upload(void* u, u32 t, u32 face, u32 mip, u32 w, u32 h, const void* src, u32 row, u32 rows)
-+{
-+    if (st.n_upload < 16) { st.up_w[st.n_upload] = w; st.up_h[st.n_upload] = h; st.up_mip[st.n_upload] = mip; }
-+    if (mip == 0) memcpy(st.first_texel, src, 4);
-+    st.n_upload++;
-+}
-+static void stub_release(void* u, u32 t) { st.n_release++; }
-+/* An "image": its size is in the file name after an 'x' (…_16x8.png), every
-+ * texel the same colour, 10 20 30 40. */
-+static int stub_load(void* u, const char* path, u8** rgba, u32* w, u32* h)
-+{
-+    st.n_load++;
-+    const char* p = strrchr(path, '_');
-+    unsigned a = 0, b = 0;
-+    if (!p || sscanf(p + 1, "%ux%u", &a, &b) != 2) return 0;
-+    *rgba = (u8*)malloc((size_t)a * b * 4);
-+    for (u32 i = 0; i < a * b; i++) { (*rgba)[i * 4] = 10; (*rgba)[i * 4 + 1] = 20; (*rgba)[i * 4 + 2] = 30; (*rgba)[i * 4 + 3] = 40; }
-+    *w = a; *h = b;
-+    return 1;
-+}
-+static int stub_save(void* u, const char* path, const u8* rgba, u32 w, u32 h, u32 row)
-+{
-+    st.n_save++;
-+    snprintf(st.saved_path, sizeof st.saved_path, "%s", path);
-+    st.saved_w = w; st.saved_h = h;
-+    memcpy(st.saved_first, rgba, 4);
-+    return 1;
-+}
-+static const rsx_draw_backend stub = {
-+    .texture_create = stub_create, .texture_upload = stub_upload, .texture_release = stub_release,
-+    .image_load = stub_load, .image_save = stub_save,
-+};
-+
-+static void touch(const char* path)
-+{
-+    FILE* f = fopen(path, "wb");
-+    assert(f);
-+    fclose(f);
-+}
-+
-+static void reset_mods(void)
-+{
-+    free(s_mods.e); free(s_mods.idx); free(s_mods.pool); free(s_mods.dumped);
-+    memset(&s_mods, 0, sizeof s_mods);
-+}
-+
-+int main(void)
-+{
-+    g.be = &stub;
-+
-+    /* ---- file names ---- */
-+    assert(eng_mod_name_key("3f09a1c2b4d5e6f7.png") == 0x3f09a1c2b4d5e6f7ull);
-+    assert(eng_mod_name_key("3F09A1C2B4D5E6F7_logo.PNG") == 0x3f09a1c2b4d5e6f7ull);
-+    assert(eng_mod_name_key("3f09a1c2b4d5e6f.png") == 0);      /* 15 digits */
-+    assert(eng_mod_name_key("3f09a1c2b4d5e6f7a.png") == 0);    /* a 17th digit */
-+    assert(eng_mod_name_key("3f09a1c2b4d5e6f7.jpg") == 0);
-+    assert(eng_mod_name_key("3f09a1c2b4d5e6f7") == 0);
-+    assert(eng_mod_name_key("notes.txt") == 0);
-+
-+    /* ---- the key: content, base format and size; not the address ---- */
-+    const u64 k1 = eng_texmod_key(0x1234, 0xA5, 64, 32);
-+    assert(k1 && k1 == eng_texmod_key(0x1234, 0xA5, 64, 32));
-+    assert(k1 != eng_texmod_key(0x1235, 0xA5, 64, 32));
-+    assert(k1 != eng_texmod_key(0x1234, 0xA5, 32, 64));
-+    assert(k1 != eng_texmod_key(0x1234, 0xA6, 64, 32));
-+    assert(k1 == eng_texmod_key(0x1234, 0x85, 64, 32));      /* the LN bit (0x20) does not count */
-+
-+    /* ---- packs: order, nesting, a missing one ---- */
-+    char root[600];
-+    { const char* tmp = getenv("TMPDIR");
-+      snprintf(root, sizeof root, "%s/texpacks_XXXXXX", tmp && *tmp ? tmp : "/tmp"); }
-+    assert(mkdtemp(root));
-+    char p[700];
-+    snprintf(p, sizeof p, "%s/hd", root);              mkdir(p, 0755);
-+    snprintf(p, sizeof p, "%s/hd/ui", root);           mkdir(p, 0755);
-+    snprintf(p, sizeof p, "%s/base", root);            mkdir(p, 0755);
-+    snprintf(p, sizeof p, "%s/hd/1111111111111111_16x8.png", root);     touch(p);
-+    snprintf(p, sizeof p, "%s/hd/ui/2222222222222222_4x4.png", root);   touch(p);
-+    snprintf(p, sizeof p, "%s/base/1111111111111111_8x8.png", root);    touch(p);   /* hd wins */
-+    snprintf(p, sizeof p, "%s/base/3333333333333333_8x8.png", root);    touch(p);
-+    snprintf(p, sizeof p, "%s/base/readme.txt", root);                  touch(p);
-+    setenv("PS3_MODS_DIR", root, 1);
-+    setenv("PS3_MODS", " hd, base ,nothere", 1);
-+    unsetenv("PS3_MODS_DUMP");
-+    reset_mods();
-+    assert(eng_mods_wanted() && s_mods.on && s_mods.npacks == 2 && s_mods.n == 3);
-+    assert(eng_mod_find(0x1111111111111111ull)->pack == 0);
-+    assert(eng_mod_find(0x2222222222222222ull)->pack == 0);
-+    assert(eng_mod_find(0x3333333333333333ull)->pack == 1);
-+    assert(!eng_mod_find(0x4444444444444444ull));
-+
-+    /* ---- a replacement: RGBA8 at its own size, mips down to 1x1 ---- */
-+    memset(&st, 0, sizeof st);
-+    u32 h = eng_texmod_apply(0x1111111111111111ull, 0xA5, 64, 32, 7, 0xAAE4);
-+    assert(h && st.n_create == 1 && st.created_fmt == RSX_BE_FMT_R8G8B8A8);
-+    assert(st.created_w == 16 && st.created_h == 8 && st.created_mips == 5);   /* 16,8,4,2,1 */
-+    assert(st.created_remap == 0xAAE4 && st.created_rsx_fmt == 0xA5);          /* the original's sampling */
-+    assert(st.n_upload == 5 && st.up_w[4] == 1 && st.up_h[4] == 1 && st.up_mip[4] == 4);
-+    assert(st.first_texel[0] == 10 && st.first_texel[3] == 40);
-+    /* no mips in the original: none in the replacement */
-+    memset(&st, 0, sizeof st);
-+    assert(eng_texmod_apply(0x2222222222222222ull, 0xA5, 4, 4, 1, 0) && st.created_mips == 1 && st.n_upload == 1);
-+    /* unnormalised coordinates (0x40): the size must stay */
-+    memset(&st, 0, sizeof st);
-+    assert(eng_texmod_apply(0x3333333333333333ull, 0xA5 | 0x40, 4, 4, 1, 0) == 0 && st.n_create == 0);
-+    assert(eng_mod_find(0x3333333333333333ull)->bad);
-+    assert(eng_texmod_apply(0x3333333333333333ull, 0xA5, 8, 8, 1, 0) == 0);   /* bad stays bad: no retry */
-+    /* not in any pack */
-+    assert(eng_texmod_apply(0x4444444444444444ull, 0xA5, 4, 4, 1, 0) == 0);
-+
-+    /* ---- the box filter ---- */
-+    { const u8 src[2 * 2 * 4] = { 0,0,0,0,  4,8,12,16,  8,16,24,32,  12,24,36,48 };
-+      u8 dst[4];
-+      eng_rgba_half(src, 2, 2, dst, 1, 1);
-+      assert(dst[0] == 6 && dst[1] == 12 && dst[2] == 18 && dst[3] == 24); }
-+
-+    /* ---- DXT1 for the dump: white/black palette ---- */
-+    { const u8 blk[8] = { 0xFF, 0xFF, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00 };   /* texel 1 = index 1 */
-+      u8 rgba[4 * 4 * 4];
-+      eng_bc_decode(blk, 8, 4, 4, RSX_TEXFMT_BC1, rgba);
-+      assert(rgba[0] == 255 && rgba[3] == 255);                 /* texel 0: c0 white */
-+      assert(rgba[4] == 0 && rgba[5] == 0 && rgba[7] == 255); } /* texel 1: c1 black */
-+
-+    /* ---- end to end: a guest texture, replaced by content ---- */
-+    vm_base = (u8*)calloc(2u << 20, 1);
-+    const u32 off = 0x1000, W = 16, H = 16, FMT = 0xA5;        /* A8R8G8B8, linear */
-+    for (u32 i = 0; i < W * H; i++) { vm_base[off + i * 4] = 0xFF; vm_base[off + i * 4 + 1] = (u8)i; }
-+    int readable = 0;
-+    const u64 content = eng_texture_content_hash(RSX_LOCATION_MAIN, off, W * H * 4, &readable);
-+    assert(readable);
-+    const u64 key = eng_texmod_key(content, FMT, W, H);
-+    snprintf(p, sizeof p, "%s/base/%016llx_32x32.png", root, (unsigned long long)key);
-+    touch(p);
-+    char dump[700];
-+    snprintf(dump, sizeof dump, "%s/dump", root);
-+    setenv("PS3_MODS_DUMP", dump, 1);
-+    reset_mods();
-+    memset(&st, 0, sizeof st);
-+    u32 hnd = eng_texture_upload(RSX_LOCATION_MAIN, off, FMT, W, H, 1, W * 4, 0, 0xAAE4, 1);
-+    assert(hnd && st.created_w == 32 && st.created_h == 32);   /* the pack's, not the guest's */
-+    assert(st.n_save == 1 && st.saved_w == W && st.saved_h == H);   /* and the original dumped */
-+    { char want[700]; snprintf(want, sizeof want, "%s/%016llx.png", dump, (unsigned long long)key);
-+      assert(!strcmp(st.saved_path, want)); }
-+    /* the game rewrites the texture: a new key, no replacement, the original
-+     * uploaded and dumped once */
-+    vm_base[off] ^= 0x5A;
-+    memset(&st, 0, sizeof st);
-+    hnd = eng_texture_upload(RSX_LOCATION_MAIN, off, FMT, W, H, 1, W * 4, 0, 0xAAE4, 1);
-+    assert(hnd && st.created_w == W && st.created_h == H && st.n_save == 1);
-+    memset(&st, 0, sizeof st);
-+    eng_texture_upload(RSX_LOCATION_MAIN, off, FMT, W, H, 1, W * 4, 0, 0xAAE4, 1);
-+    assert(st.n_save == 0);                                    /* once a key */
-+
-+    /* ---- the level-0 key: a mipmapped texture whose smaller level changes
-+     * between loads (PES 2013 uploads its kits before their mips are filled)
-+     * still finds a pack file named by its level 0 ---- */
-+    {
-+        const u32 off2 = 0x8000;
-+        for (u32 i = 0; i < W * H; i++) { vm_base[off2 + i * 4] = 0xFF; vm_base[off2 + i * 4 + 2] = (u8)(i * 3); }
-+        int r0 = 0;
-+        const u64 c0 = eng_texture_content_hash(RSX_LOCATION_MAIN, off2, W * H * 4, &r0);
-+        assert(r0);
-+        const u64 key0 = eng_texmod_key_level0(c0, FMT, W, H);
-+        assert(key0 != eng_texmod_key(c0, FMT, W, H));
-+        snprintf(p, sizeof p, "%s/base/%016llx_32x32.png", root, (unsigned long long)key0);
-+        touch(p);
-+        reset_mods();
-+        memset(&st, 0, sizeof st);
-+        hnd = eng_texture_upload(RSX_LOCATION_MAIN, off2, FMT, W, H, 2, W * 4, 0, 0xAAE4, 1);
-+        assert(hnd && st.created_w == 32);                     /* replaced by the level-0 file */
-+        /* the same image without mips (another copy of it): the same file */
-+        memcpy(vm_base + 0x20000, vm_base + off2, W * H * 4);
-+        memset(&st, 0, sizeof st);
-+        assert(eng_texture_upload(RSX_LOCATION_MAIN, 0x20000, FMT, W, H, 1, W * 4, 0, 0xAAE4, 1)
-+               && st.created_w == 32);
-+        { char ix[760]; snprintf(ix, sizeof ix, "%s/textures-level0.txt", dump);
-+          FILE* f = fopen(ix, "r"); assert(f);
-+          char line[128], want[40]; int seen = 0;
-+          snprintf(want, sizeof want, "%016llx", (unsigned long long)key0);
-+          while (fgets(line, sizeof line, f)) seen |= strstr(line, want) != NULL;
-+          fclose(f); assert(seen); }                           /* and listed by the dump */
-+        vm_base[off2 + W * H * 4 + 5] ^= 0x77;                 /* level 1 differs, level 0 does not */
-+        memset(&st, 0, sizeof st);
-+        hnd = eng_texture_upload(RSX_LOCATION_MAIN, off2, FMT, W, H, 2, W * 4, 0, 0xAAE4, 1);
-+        assert(hnd && st.created_w == 32);                     /* still replaced */
-+        vm_base[off2 + 9] ^= 0x33;                             /* level 0 differs: not replaced */
-+        memset(&st, 0, sizeof st);
-+        hnd = eng_texture_upload(RSX_LOCATION_MAIN, off2, FMT, W, H, 2, W * 4, 0, 0xAAE4, 1);
-+        assert(hnd && st.created_w == W);
-+    }
-+
-+    /* ---- off: nothing runs ---- */
-+    unsetenv("PS3_MODS");
-+    unsetenv("PS3_MODS_DUMP");
-+    reset_mods();
-+    assert(!eng_mods_wanted());
-+    memset(&st, 0, sizeof st);
-+    hnd = eng_texture_upload(RSX_LOCATION_MAIN, off, FMT, W, H, 1, W * 4, 0, 0xAAE4, 1);
-+    assert(hnd && st.n_load == 0 && st.n_save == 0 && st.created_w == W);
-+
-+    reset_mods();
-+    snprintf(p, sizeof p, "rm -rf '%s'", root);
-+    if (system(p) != 0) fprintf(stderr, "could not remove %s\n", root);
-+    printf("test_texture_packs: ok\n");
-+    return 0;
-+}
 diff --git a/libs/video/tests/test_vertex_fetch_plan.c b/libs/video/tests/test_vertex_fetch_plan.c
 index 79f3cc66..edabcf8c 100644
 --- a/libs/video/tests/test_vertex_fetch_plan.c
@@ -6900,126 +6680,6 @@ index 79f3cc66..edabcf8c 100644
          printf("FAIL: too few cases exercised a path\n");
          return 1;
      }
-diff --git a/libs/video/tests/test_vp_const_usage.c b/libs/video/tests/test_vp_const_usage.c
-new file mode 100644
-index 00000000..d7f65db3
---- /dev/null
-+++ b/libs/video/tests/test_vp_const_usage.c
-@@ -0,0 +1,114 @@
-+/*
-+ * rsx_vp_analyze_constants against the decompiler it describes.
-+ *
-+ * The draw engine uploads only the vp_c[] rows this analysis reports, so a row
-+ * it misses is a constant the shader reads as stale data. The check here is
-+ * not against a second decoding of the fields but against the HLSL the
-+ * decompiler actually emits: random programs are decompiled, every vp_c[...]
-+ * in the text is collected, and each fixed index must fall inside the
-+ * reported range, and a relative read in the shader must be reported as
-+ * `relative` (the converse is allowed: it only costs a full upload).
-+ *
-+ * Build (from the repo root):
-+ *   clang -std=gnu17 -Wall -Wextra -I include -I libs/video \
-+ *     -o /tmp/test_vp_const_usage libs/video/tests/test_vp_const_usage.c \
-+ *     libs/video/rsx_vp_decompiler.c
-+ */
-+#include "rsx_vp_decompiler.h"
-+
-+#include <stdint.h>
-+#include <stdio.h>
-+#include <stdlib.h>
-+#include <string.h>
-+
-+static int fails;
-+#define CHECK(c, ...) do { if (!(c)) { fails++; if (fails <= 20) { \
-+    printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } } while (0)
-+
-+static uint64_t rng = 0x9E3779B97F4A7C15ull;
-+static uint32_t rnd(void)
-+{
-+    rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
-+    return (uint32_t)rng;
-+}
-+
-+static void put_le(uint8_t* p, uint32_t v)
-+{
-+    p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8);
-+    p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24);
-+}
-+
-+/* One instruction with chosen source types. Opcodes are random over the
-+ * whole field; flow-control and unknown ops are left in on purpose, since
-+ * the analysis has to cover whatever the decompiler emits for them too. */
-+static void make_instr(uint8_t* p, int last, int relative_bias)
-+{
-+    uint32_t d0 = rnd(), d1 = rnd(), d2 = rnd(), d3 = rnd();
-+    /* Bias the source types toward constants (type 3) so most programs
-+     * exercise the analysis. */
-+    if (rnd() & 1) d1 = (d1 & ~0xFFu) | (((d1 & 0xFFu) & ~1u) | 1u);    /* src0 hi bits */
-+    if (rnd() & 1) d2 = (d2 & ~(3u << 6)) | (3u << 6);                  /* src1 type = 3 */
-+    if (rnd() & 1) d3 = (d3 & ~(3u << 21)) | (3u << 21);                /* src2 type low bits */
-+    if (rnd() & 1) d2 = (d2 & ~(3u << 23)) | (3u << 23);                /* src0 type = 3 */
-+    if (!relative_bias) d3 &= ~2u;          /* index_const off */
-+    d3 &= ~1u;
-+    if (last) d3 |= 1u;
-+    put_le(p + 0, d0); put_le(p + 4, d1); put_le(p + 8, d2); put_le(p + 12, d3);
-+}
-+
-+static char hlsl[1 << 20];
-+
-+int main(void)
-+{
-+    enum { PROGRAMS = 20000, MAXI = 24 };
-+    static uint8_t uc[MAXI * 16];
-+    int decompiled = 0, ranged = 0, relative = 0, over_relative = 0;
-+    for (int n = 0; n < PROGRAMS; n++) {
-+        const int instrs = 1 + (int)(rnd() % MAXI);
-+        const int rel = (rnd() % 4) == 0;
-+        for (int i = 0; i < instrs; i++) make_instr(uc + i * 16, i == instrs - 1, rel);
-+
-+        rsx_vp_const_usage u;
-+        const int ai = rsx_vp_analyze_constants(uc, (uint32_t)instrs * 16u, &u);
-+        CHECK(ai == instrs && u.valid, "program %d: analysis returned %d (valid %d) for %d instrs",
-+              n, ai, u.valid, instrs);
-+
-+        const int r = rsx_vp_decompile(uc, (uint32_t)instrs * 16u, hlsl, sizeof hlsl);
-+        if (r < 0) continue;
-+        decompiled++;
-+
-+        int saw_relative = 0;
-+        for (const char* q = hlsl; (q = strstr(q, "vp_c[")) != NULL; q += 5) {
-+            const char* idx = q + 5;
-+            /* The cbuffer declaration, not a read. */
-+            if (q - hlsl >= 7 && !strncmp(q - 7, "float4 ", 7)) continue;
-+            if (*idx == '(') { saw_relative = 1; continue; }
-+            const unsigned c = (unsigned)strtoul(idx, NULL, 10);
-+            CHECK(!u.relative ? (u.lo <= u.hi && c >= u.lo && c <= u.hi) : 1,
-+                  "program %d: shader reads vp_c[%u] outside [%u, %u]", n, c, u.lo, u.hi);
-+        }
-+        /* One-way: a relative read the analysis misses would leave rows
-+         * unwritten. Reporting relative for a source the opcode never reads
-+         * only costs a full copy, so it is allowed and counted. */
-+        CHECK(!saw_relative || u.relative,
-+              "program %d: shader reads relatively, analysis did not say so", n);
-+        if (u.relative && !saw_relative) over_relative++;
-+        if (u.relative) relative++; else if (u.lo <= u.hi) ranged++;
-+    }
-+
-+    /* No end flag: the analysis must refuse to give a range. */
-+    for (int i = 0; i < 4; i++) make_instr(uc + i * 16, 0, 0);
-+    rsx_vp_const_usage u;
-+    CHECK(rsx_vp_analyze_constants(uc, 4 * 16u, &u) < 0 && !u.valid,
-+          "unterminated program accepted");
-+    /* NULL input. */
-+    CHECK(rsx_vp_analyze_constants(NULL, 16, &u) < 0 && !u.valid, "NULL ucode accepted");
-+
-+    printf("test_vp_const_usage: %d programs decompiled (%d ranged, %d relative, %d of those"
-+           " conservatively), %d failure(s)\n", decompiled, ranged, relative, over_relative, fails);
-+    if (decompiled < PROGRAMS / 2 || ranged < 1000 || relative < 100) {
-+        printf("FAIL: too few programs exercised the check\n");
-+        return 1;
-+    }
-+    return fails ? 1 : 0;
-+}
 diff --git a/runtime/ppu/ppu_fs.cpp b/runtime/ppu/ppu_fs.cpp
 index ec959f88..9e6f6ed9 100644
 --- a/runtime/ppu/ppu_fs.cpp
@@ -8097,10 +7757,88 @@ index c64b0b8d..4c4ee6a6 100644
          t->state = PPU_THREAD_STATE_FREE;
          pthread_mutex_destroy(&t->finish_mutex);
 diff --git a/runtime/syscalls/sys_semaphore.c b/runtime/syscalls/sys_semaphore.c
-index a05eeecf..ea3e80e7 100644
+index a05eeecf..ddb0d09d 100644
 --- a/runtime/syscalls/sys_semaphore.c
 +++ b/runtime/syscalls/sys_semaphore.c
-@@ -326,6 +326,24 @@ int64_t sys_semaphore_destroy(ppu_context* ctx)
+@@ -226,20 +226,42 @@ int64_t sys_semaphore_create(ppu_context* ctx)
+ 
+     sem_table_lock();
+ 
++    /* Round-robin from the last slot handed out, as LV2 does not give a freed
++     * id straight back: a thread still holding a destroyed semaphore's id must
++     * not land on the next semaphore created. */
++    static int s_next_slot = 0;
+     int slot = -1;
+-    for (int i = 0; i < SYS_SEMAPHORE_MAX; i++) {
++    for (int k = 0; k < SYS_SEMAPHORE_MAX; k++) {
++        const int i = (s_next_slot + k) % SYS_SEMAPHORE_MAX;
+         if (!g_sys_semaphores[i].active) { slot = i; break; }
+     }
++    if (slot >= 0) s_next_slot = (slot + 1) % SYS_SEMAPHORE_MAX;
+     if (slot < 0) {
+         sem_table_unlock();
+         return (int64_t)(int32_t)CELL_EAGAIN;
+     }
+ 
+     sys_semaphore_info* s = &g_sys_semaphores[slot];
++#ifdef _WIN32
+     memset(s, 0, sizeof(*s));
+-    s->active    = 1;
++#else
++    /* mtx and cv outlive the semaphore (see sys_semaphore_info): set up once. */
++    if (!s->sync_inited) {
++        pthread_mutex_init(&s->mtx, NULL);
++        pthread_cond_init(&s->cv, NULL);
++        s->sync_inited = 1;
++    }
++    pthread_mutex_lock(&s->mtx);
++    memset(s->name, 0, sizeof s->name);
++    s->protocol = 0;
++    s->waiters = 0;
++    s->owner_tid = 0;
++    s->owner_lr = 0;
++    s->head = s->tail = NULL;
++#endif
+     s->value     = initial;
+     s->max_value = max_val;
++    s->active    = 1;
+ 
+     if (attr_addr != 0) {
+         uint8_t* attr_raw = (uint8_t*)vm_to_host(attr_addr);
+@@ -264,8 +286,7 @@ int64_t sys_semaphore_create(ppu_context* ctx)
+         return (int64_t)(int32_t)CELL_EAGAIN;
+     }
+ #else
+-    pthread_mutex_init(&s->mtx, NULL);
+-    pthread_cond_init(&s->cv, NULL);
++    pthread_mutex_unlock(&s->mtx);
+ #endif
+ 
+     uint32_t sem_id = (uint32_t)(slot + 1);
+@@ -308,12 +329,18 @@ int64_t sys_semaphore_destroy(ppu_context* ctx)
+ #ifdef _WIN32
+     CloseHandle(s->sem_handle);
+     DeleteCriticalSection(&s->value_lock);
++    s->active = 0;
+ #else
+-    pthread_cond_destroy(&s->cv);
+-    pthread_mutex_destroy(&s->mtx);
+-#endif
+-
++    /* LV2: a semaphore with threads waiting on it cannot be destroyed. */
++    pthread_mutex_lock(&s->mtx);
++    if (s->head) {
++        pthread_mutex_unlock(&s->mtx);
++        sem_table_unlock();
++        return (int64_t)(int32_t)CELL_EBUSY;
++    }
+     s->active = 0;
++    pthread_mutex_unlock(&s->mtx);
++#endif
+     sem_table_unlock();
+     return CELL_OK;
+ }
+@@ -326,6 +353,24 @@ int64_t sys_semaphore_destroy(ppu_context* ctx)
   * -----------------------------------------------------------------------*/
  /* SEM_ERRDBG=1: report non-OK returns. PSGL's PlatformDevice asserts on one of
   * these once per frame, and naming the failing call beats inferring it. */
@@ -8125,7 +7863,7 @@ index a05eeecf..ea3e80e7 100644
  static int64_t sys_semaphore_wait_impl(ppu_context* ctx);
  int64_t sys_semaphore_wait(ppu_context* ctx)
  {
-@@ -344,6 +362,7 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
+@@ -344,6 +389,7 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
                    (unsigned long long)ctx->thread_id, 10); } }
      uint32_t sem_id     = LV2_ARG_U32(ctx, 0);
      uint64_t timeout_us = LV2_ARG_U64(ctx, 1);
@@ -8133,67 +7871,124 @@ index a05eeecf..ea3e80e7 100644
      /* Per-port hook: an engine job manager may spin on sys_semaphore_wait /
       * trywait waiting for SPU-job completions a lifted policy module never
       * writes, so a port can satisfy them here. Defined weakly below, so this is
-@@ -412,10 +431,54 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
+@@ -410,34 +456,101 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
+     }
+ #else
      pthread_mutex_lock(&s->mtx);
- 
-     if (timeout_us == 0) {
-+        /* SEMSTALL=<seconds>: a wait that blocks longer than this prints one
-+         * line with the semaphore's runtime state, the blocked thread and the
-+         * guest return address. A deadlocked loader shows exactly which
-+         * semaphore is at zero and how many threads are parked on it, which is
-+         * the difference between "nobody posted" and "the holder never ran". */
-+        int stall_s = 0;
-+        { static int _v = -1;
-+          if (_v < 0) { const char* e = getenv("SEMSTALL"); _v = e ? atoi(e) : 0; }
-+          stall_s = _v; }
-+        int reported = 0;
-         while (s->value <= 0) {
-             s->waiters++;
+-
+-    if (timeout_us == 0) {
+-        while (s->value <= 0) {
+-            s->waiters++;
 -            pthread_cond_wait(&s->cv, &s->mtx);
 -            s->waiters--;
-+            if (stall_s > 0) {
-+                struct timespec ts;
-+                clock_gettime(CLOCK_REALTIME, &ts);
-+                ts.tv_sec += stall_s;
-+                int rc = pthread_cond_timedwait(&s->cv, &s->mtx, &ts);
-+                s->waiters--;
-+                if (rc == ETIMEDOUT && s->value <= 0 && !reported) {
-+                    reported = 1;
-+                    fprintf(stderr, "[semstall] sem=%u tid=%llu blocked >%ds"
-+                                    " value=%d max=%d waiters=%d lr=0x%08X%c",
-+                            sem_id, (unsigned long long)ctx->thread_id, stall_s,
-+                            s->value, s->max_value, s->waiters,
-+                            (unsigned)ctx->lr, 10);
-+                    /* One full snapshot of the table, so the counters of the
-+                     * other threads are visible next to the blocked one. */
-+                    static int once = 0;
-+                    if (!once) {
-+                        once = 1;
-+                        for (int i = 0; i < SYS_SEMAPHORE_MAX; i++) {
-+                            if (!g_sys_semaphores[i].active) continue;
-+                            fprintf(stderr, "[semstall]   sem=%d name='%.8s'"
-+                                            " value=%d max=%d waiters=%d owner=%u"
-+                                            " owner_lr=0x%08X%c",
-+                                    i + 1, g_sys_semaphores[i].name,
-+                                    g_sys_semaphores[i].value,
-+                                    g_sys_semaphores[i].max_value,
-+                                    g_sys_semaphores[i].waiters,
-+                                    g_sys_semaphores[i].owner_tid,
-+                                    g_sys_semaphores[i].owner_lr, 10);
-+                        }
++    if (!s->active) {                 /* destroyed between the check above and here */
++        pthread_mutex_unlock(&s->mtx);
++        return (int64_t)(int32_t)CELL_ESRCH;
++    }
++    /* A free token, and nobody queued ahead: take it. */
++    if (s->value > 0 && !s->head) {
++        s->value--;
++        if (s->max_value == 1) {
++            s->owner_tid = (uint32_t)ctx->thread_id;
++            s->owner_lr  = (uint32_t)ctx->lr;
+         }
+-    } else {
+-        struct timespec ts;
+-        clock_gettime(CLOCK_REALTIME, &ts);
+-        ts.tv_sec  += (time_t)(timeout_us / 1000000);
+-        ts.tv_nsec += (long)((timeout_us % 1000000) * 1000);
+-        if (ts.tv_nsec >= 1000000000L) {
+-            ts.tv_sec++;
+-            ts.tv_nsec -= 1000000000L;
++        pthread_mutex_unlock(&s->mtx);
++        return CELL_OK;
++    }
++    /* Queue up; a post grants the token to this node (FIFO) without touching
++     * value, so a later arrival cannot take it first. */
++    sys_semaphore_waiter me = { NULL, 0 };
++    if (s->tail) s->tail->next = &me; else s->head = &me;
++    s->tail = &me;
++    s->waiters++;
++
++    /* SEMSTALL=<seconds>: a wait that blocks longer than this prints one
++     * line with the semaphore's runtime state, the blocked thread and the
++     * guest return address. A deadlocked loader shows exactly which
++     * semaphore is at zero and how many threads are parked on it, which is
++     * the difference between "nobody posted" and "the holder never ran". */
++    int stall_s = 0;
++    if (timeout_us == 0) {
++        static int _v = -1;
++        if (_v < 0) { const char* e = getenv("SEMSTALL"); _v = e ? atoi(e) : 0; }
++        stall_s = _v;
++    }
++    struct timespec deadline = { 0, 0 };
++    if (timeout_us > 0) {
++        clock_gettime(CLOCK_REALTIME, &deadline);
++        deadline.tv_sec  += (time_t)(timeout_us / 1000000);
++        deadline.tv_nsec += (long)((timeout_us % 1000000) * 1000);
++        if (deadline.tv_nsec >= 1000000000L) { deadline.tv_sec++; deadline.tv_nsec -= 1000000000L; }
++    }
++    int reported = 0;
++    while (!me.granted) {
++        int rc;
++        if (timeout_us > 0) {
++            rc = pthread_cond_timedwait(&s->cv, &s->mtx, &deadline);
++        } else if (stall_s > 0) {
++            struct timespec ts;
++            clock_gettime(CLOCK_REALTIME, &ts);
++            ts.tv_sec += stall_s;
++            rc = pthread_cond_timedwait(&s->cv, &s->mtx, &ts);
++            if (rc == ETIMEDOUT && !me.granted && !reported) {
++                reported = 1;
++                fprintf(stderr, "[semstall] sem=%u tid=%llu blocked >%ds"
++                                " value=%d max=%d waiters=%d lr=0x%08X%c",
++                        sem_id, (unsigned long long)ctx->thread_id, stall_s,
++                        s->value, s->max_value, s->waiters,
++                        (unsigned)ctx->lr, 10);
++                /* One full snapshot of the table, so the counters of the
++                 * other threads are visible next to the blocked one. */
++                static int once = 0;
++                if (!once) {
++                    once = 1;
++                    for (int i = 0; i < SYS_SEMAPHORE_MAX; i++) {
++                        if (!g_sys_semaphores[i].active) continue;
++                        fprintf(stderr, "[semstall]   sem=%d name='%.8s'"
++                                        " value=%d max=%d waiters=%d owner=%u"
++                                        " owner_lr=0x%08X%c",
++                                i + 1, g_sys_semaphores[i].name,
++                                g_sys_semaphores[i].value,
++                                g_sys_semaphores[i].max_value,
++                                g_sys_semaphores[i].waiters,
++                                g_sys_semaphores[i].owner_tid,
++                                g_sys_semaphores[i].owner_lr, 10);
 +                    }
 +                }
-+            } else {
-+                pthread_cond_wait(&s->cv, &s->mtx);
-+                s->waiters--;
 +            }
++            continue;
++        } else {
++            rc = pthread_cond_wait(&s->cv, &s->mtx);
          }
-     } else {
-         struct timespec ts;
-@@ -438,6 +501,10 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
+-        while (s->value <= 0) {
+-            s->waiters++;
+-            int rc = pthread_cond_timedwait(&s->cv, &s->mtx, &ts);
++        if (rc == ETIMEDOUT && timeout_us > 0 && !me.granted) {
++            /* Leave the queue: unlink this node. */
++            sys_semaphore_waiter** pp = &s->head;
++            sys_semaphore_waiter* prev = NULL;
++            while (*pp && *pp != &me) { prev = *pp; pp = &(*pp)->next; }
++            if (*pp) { *pp = me.next; if (s->tail == &me) s->tail = prev; }
+             s->waiters--;
+-            if (rc == ETIMEDOUT) {
+-                pthread_mutex_unlock(&s->mtx);
+-                return (int64_t)(int32_t)CELL_ETIMEDOUT;
+-            }
++            pthread_mutex_unlock(&s->mtx);
++            return (int64_t)(int32_t)CELL_ETIMEDOUT;
+         }
      }
- 
-     s->value--;
+-
+-    s->value--;
++    /* Granted by a post, which already took this node off the queue. */
 +    if (s->max_value == 1) {
 +        s->owner_tid = (uint32_t)ctx->thread_id;
 +        s->owner_lr  = (uint32_t)ctx->lr;
@@ -8201,7 +7996,7 @@ index a05eeecf..ea3e80e7 100644
      pthread_mutex_unlock(&s->mtx);
  #endif
  
-@@ -452,6 +519,7 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
+@@ -452,6 +565,7 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
  int64_t sys_semaphore_trywait(ppu_context* ctx)
  {
      uint32_t sem_id = LV2_ARG_U32(ctx, 0);
@@ -8209,7 +8004,13 @@ index a05eeecf..ea3e80e7 100644
      { extern void ps3_spu_job_complete_pending(void); ps3_spu_job_complete_pending(); }
  
      if (sem_id == 0 || sem_id > SYS_SEMAPHORE_MAX) {
-@@ -487,6 +555,10 @@ int64_t sys_semaphore_trywait(ppu_context* ctx)
+@@ -482,11 +596,15 @@ int64_t sys_semaphore_trywait(ppu_context* ctx)
+     LeaveCriticalSection(&s->value_lock);
+ #else
+     pthread_mutex_lock(&s->mtx);
+-    if (s->value <= 0) {
++    if (s->value <= 0 || s->head) {
+         pthread_mutex_unlock(&s->mtx);
          return (int64_t)(int32_t)CELL_EBUSY;
      }
      s->value--;
@@ -8220,7 +8021,7 @@ index a05eeecf..ea3e80e7 100644
      pthread_mutex_unlock(&s->mtx);
  #endif
  
-@@ -503,6 +575,7 @@ int64_t sys_semaphore_post(ppu_context* ctx)
+@@ -503,6 +621,7 @@ int64_t sys_semaphore_post(ppu_context* ctx)
  {
      uint32_t sem_id = LV2_ARG_U32(ctx, 0);
      int32_t  count  = LV2_ARG_S32(ctx, 1);
@@ -8228,16 +8029,42 @@ index a05eeecf..ea3e80e7 100644
  
      { static int _n=0; if (getenv("SEMTID") && _n < 60000)
          fprintf(stderr, "[WAKE tid=%llu] semaphore_post(sem=%u count=%d)\n",
-@@ -561,6 +634,7 @@ int64_t sys_semaphore_post(ppu_context* ctx)
+@@ -556,15 +675,29 @@ int64_t sys_semaphore_post(ppu_context* ctx)
+         ReleaseSemaphore(s->sem_handle, wake, NULL);
+ #else
+     pthread_mutex_lock(&s->mtx);
++    if (!s->active) {
++        pthread_mutex_unlock(&s->mtx);
++        return (int64_t)(int32_t)CELL_ESRCH;
++    }
+     if (s->value + count > s->max_value) {
+         pthread_mutex_unlock(&s->mtx);
          return (int64_t)(int32_t)CELL_EBUSY;
      }
-     s->value += count;
 +    if (s->max_value == 1) { s->owner_tid = 0; s->owner_lr = 0; }
-     /* Wake the waiters this post can satisfy (broadcast is also correct — they
-      * re-check value — but min(count,waiters) signals is precise). */
-     { int wake = (count < s->waiters) ? count : s->waiters;
++    /* Hand the tokens to the threads already waiting, oldest first; only what
++     * is left over goes to value. */
++    int granted = 0;
++    while (count > 0 && s->head) {
++        sys_semaphore_waiter* w = s->head;
++        s->head = w->next;
++        if (!s->head) s->tail = NULL;
++        w->granted = 1;
++        s->waiters--;
++        count--;
++        granted++;
++    }
+     s->value += count;
+-    /* Wake the waiters this post can satisfy (broadcast is also correct — they
+-     * re-check value — but min(count,waiters) signals is precise). */
+-    { int wake = (count < s->waiters) ? count : s->waiters;
+-      for (int i = 0; i < wake; i++) pthread_cond_signal(&s->cv); }
++    if (granted) pthread_cond_broadcast(&s->cv);
+     pthread_mutex_unlock(&s->mtx);
+ #endif
+ 
 diff --git a/runtime/syscalls/sys_semaphore.h b/runtime/syscalls/sys_semaphore.h
-index 38f7b65e..56748ec6 100644
+index 38f7b65e..6115f4ef 100644
 --- a/runtime/syscalls/sys_semaphore.h
 +++ b/runtime/syscalls/sys_semaphore.h
 @@ -34,6 +34,11 @@ typedef struct sys_semaphore_info {
@@ -8252,6 +8079,144 @@ index 38f7b65e..56748ec6 100644
  
  #ifdef _WIN32
      HANDLE   sem_handle;
+@@ -41,10 +46,25 @@ typedef struct sys_semaphore_info {
+ #else
+     pthread_mutex_t mtx;
+     pthread_cond_t  cv;
++    /* LV2 hands a post to the threads already waiting, in order: a thread that
++     * arrives after the post cannot take the token first. Waiters queue here
++     * (nodes live on their own stacks); post grants to them before adding to
++     * value. mtx and cv are initialised once per slot and never destroyed, so
++     * a thread still leaving a wait is safe across destroy and re-create. */
++    struct sys_semaphore_waiter* head;
++    struct sys_semaphore_waiter* tail;
++    int      sync_inited;
+ #endif
+ 
+ } sys_semaphore_info;
+ 
++#ifndef _WIN32
++typedef struct sys_semaphore_waiter {
++    struct sys_semaphore_waiter* next;
++    int granted;
++} sys_semaphore_waiter;
++#endif
++
+ extern sys_semaphore_info g_sys_semaphores[SYS_SEMAPHORE_MAX];
+ 
+ /* Syscall handlers */
+diff --git a/tests/sync_stress/main.c b/tests/sync_stress/main.c
+index 5502412b..9be1ed10 100644
+--- a/tests/sync_stress/main.c
++++ b/tests/sync_stress/main.c
+@@ -1429,6 +1429,89 @@ static int test5_rwlock_ownership(void)
+ /* =========================================================================
+  * main
+  * ========================================================================= */
++/* ===========================================================================
++ * test7_semaphore_handoff
++ *
++ * lv2 hands a post to the threads already waiting: a thread that calls wait
++ * right after the post must not take the token from the waiter that was there
++ * first. A runtime that only bumps the count and signals lets the late caller
++ * win; the waiter then sleeps on with nobody left to post (PES 2013 hung that
++ * way). Also: destroy with a waiter is EBUSY, and a destroyed id stays dead
++ * for a while (the next create does not get it back).
++ *
++ * POSIX path only: sys_semaphore.c's Win32 path still counts and signals (it
++ * was not changed with the POSIX one and is not tested here).
++ * =========================================================================*/
++#ifndef _WIN32
++typedef struct { uint32_t sid; volatile LONG result; volatile LONG done; } t7_waiter;
++
++static unsigned __stdcall t7_wait_thread(void* p)
++{
++    t7_waiter* w = (t7_waiter*)p;
++    ppu_context ctx; ctx_init_for_thread(&ctx, alloc_tid());
++    int32_t rc = call2((int64_t(*)(ppu_context*))sys_semaphore_wait, &ctx, w->sid, (uint64_t)3000000);
++    InterlockedExchange(&w->result, rc);
++    InterlockedExchange(&w->done, 1);
++    return 0;
++}
++
++static int test7_semaphore_handoff(void)
++{
++    const char* name = "test7_semaphore_handoff";
++    LONG before = g_fail_count;
++    ppu_context ctx; ctx_init_for_thread(&ctx, alloc_tid());
++    uint32_t sattr = make_sema_attr(SYS_SYNC_FIFO);
++
++    for (int trial = 0; trial < 50; trial++) {
++        uint32_t sid_addr = guest_alloc(4);
++        int32_t rc = call4((int64_t(*)(ppu_context*))sys_semaphore_create, &ctx, sid_addr, sattr, 0, 0x7FFFFFFF);
++        if (rc != CELL_OK) { fail(name, "create rc=0x%08X", (unsigned)rc); return 1; }
++        uint32_t sid = read_be32(sid_addr);
++
++        t7_waiter w = { sid, -1, 0 };
++        HANDLE th = (HANDLE)_beginthreadex(NULL, 0, t7_wait_thread, &w, 0, NULL);
++        /* wait until the thread is parked on the semaphore */
++        for (int i = 0; i < 2000; i++) {
++            if (g_sys_semaphores[sid - 1].waiters > 0) break;
++            Sleep(1);
++        }
++        if (g_sys_semaphores[sid - 1].waiters != 1) fail(name, "trial %d: waiter never parked", trial);
++
++        /* destroy with a waiter: EBUSY */
++        rc = call1((int64_t(*)(ppu_context*))sys_semaphore_destroy, &ctx, sid);
++        if (rc != (int32_t)CELL_EBUSY) fail(name, "trial %d: destroy with a waiter rc=0x%08X (want EBUSY)", trial, (unsigned)rc);
++
++        /* post once, then immediately try to take it from this thread */
++        rc = call2((int64_t(*)(ppu_context*))sys_semaphore_post, &ctx, sid, 1);
++        if (rc != CELL_OK) fail(name, "trial %d: post rc=0x%08X", trial, (unsigned)rc);
++        rc = call2((int64_t(*)(ppu_context*))sys_semaphore_wait, &ctx, sid, (uint64_t)20000 /* 20ms */);
++        if (rc != (int32_t)CELL_ETIMEDOUT)
++            fail(name, "trial %d: the late wait took the posted token (rc=0x%08X)", trial, (unsigned)rc);
++
++        WaitForSingleObject(th, INFINITE);
++        CloseHandle(th);
++        if (w.result != CELL_OK) fail(name, "trial %d: the waiter got rc=0x%08X (want OK)", trial, (unsigned)w.result);
++
++        rc = call1((int64_t(*)(ppu_context*))sys_semaphore_destroy, &ctx, sid);
++        if (rc != CELL_OK) fail(name, "trial %d: destroy rc=0x%08X", trial, (unsigned)rc);
++
++        /* the destroyed id is not handed straight back */
++        uint32_t sid2_addr = guest_alloc(4);
++        rc = call4((int64_t(*)(ppu_context*))sys_semaphore_create, &ctx, sid2_addr, sattr, 0, 1);
++        if (rc != CELL_OK) { fail(name, "re-create rc=0x%08X", (unsigned)rc); return 1; }
++        uint32_t sid2 = read_be32(sid2_addr);
++        if (sid2 == sid) fail(name, "trial %d: destroyed id %u came straight back", trial, (unsigned)sid);
++        rc = call2((int64_t(*)(ppu_context*))sys_semaphore_post, &ctx, sid, 1);
++        if (rc != (int32_t)CELL_ESRCH) fail(name, "trial %d: post on a destroyed id rc=0x%08X (want ESRCH)", trial, (unsigned)rc);
++        call1((int64_t(*)(ppu_context*))sys_semaphore_destroy, &ctx, sid2);
++    }
++
++    int ok = (g_fail_count == before);
++    printf("[%s] -> %s\n", name, ok ? "PASS" : "FAIL");
++    return ok ? 0 : 1;
++}
++#endif
++
+ int main(int argc, char** argv)
+ {
+     g_seed = 0;
+@@ -1448,11 +1531,16 @@ int main(int argc, char** argv)
+     int rc4 = test4_event_queue();
+     int rc5 = test5_rwlock_ownership();
+     int rc6 = test6_recursive_mutex();
++#ifndef _WIN32
++    int rc7 = test7_semaphore_handoff();
++#else
++    int rc7 = 0;
++#endif
+ 
+     ULONGLONG total_ms = now_ms() - t_start;
+     printf("=== total wall time: %llums ===\n", (unsigned long long)total_ms);
+ 
+-    int failed = rc1a || rc1 || rc2 || rc3 || rc4 || rc5 || rc6 || (g_fail_count != 0);
++    int failed = rc1a || rc1 || rc2 || rc3 || rc4 || rc5 || rc6 || rc7 || (g_fail_count != 0);
+     printf("=== RESULT: %s (fail_count=%ld) ===\n", failed ? "FAIL" : "PASS", (long)g_fail_count);
+     return failed ? 1 : 0;
+ }
 diff --git a/tools/ppu_lifter.py b/tools/ppu_lifter.py
 index 9d9df717..ac972ba4 100644
 --- a/tools/ppu_lifter.py
@@ -8321,3 +8286,985 @@ index 9d9df717..ac972ba4 100644
  #define vm_read8(a)  vm_read8_inl(a)
  #define vm_read16(a) vm_read16_inl(a)
  #define vm_read32(a) vm_read32_inl(a)
+diff --git a/libs/misc/cellMusic.c b/libs/misc/cellMusic.c
+new file mode 100644
+index 00000000..96470bad
+--- /dev/null
++++ b/libs/misc/cellMusic.c
+@@ -0,0 +1,22 @@
++/*
++ * ps3recomp - cellMusic (custom soundtrack) HLE
++ *
++ * The music utility plays the user's own tracks in place of a title's music.
++ * There is no music library here, so initialisation reports that the utility
++ * is unavailable, as a console with no music would leave the title on its own
++ * soundtrack. Before this existed the import was unresolved and answered
++ * CELL_OK, so a title could wait for an initialise callback that never came.
++ */
++
++#include "ps3emu/ps3types.h"
++#include "ps3emu/error_codes.h"
++#include <stdio.h>
++
++#define CELL_MUSIC_ERROR_GENERIC 0x8002C1FF
++
++s32 cellMusicInitialize2(s32 mode, s32 spuPriority, u32 func, u32 userData)
++{
++    (void)func; (void)userData;
++    printf("[cellMusic] Initialize2(mode=%d, spuPriority=%d) -> unavailable\n", mode, spuPriority);
++    return (s32)CELL_MUSIC_ERROR_GENERIC;
++}
+diff --git a/libs/misc/cellSearch.c b/libs/misc/cellSearch.c
+new file mode 100644
+index 00000000..b4043aa0
+--- /dev/null
++++ b/libs/misc/cellSearch.c
+@@ -0,0 +1,22 @@
++/*
++ * ps3recomp - cellSearch (content search) HLE
++ *
++ * Content search lists the user's music, photos and videos. There is no such
++ * library here, so initialisation reports that the utility is unavailable, as
++ * on a console with nothing to search. Before this existed the import was
++ * unresolved and answered CELL_OK, so a title could wait for an initialise
++ * callback that never came.
++ */
++
++#include "ps3emu/ps3types.h"
++#include "ps3emu/error_codes.h"
++#include <stdio.h>
++
++#define CELL_SEARCH_ERROR_GENERIC 0x8002C8FF
++
++s32 cellSearchInitialize(s32 mode, u32 container, u32 func, u32 userData)
++{
++    (void)container; (void)func; (void)userData;
++    printf("[cellSearch] Initialize(mode=%d) -> unavailable\n", mode);
++    return (s32)CELL_SEARCH_ERROR_GENERIC;
++}
+diff --git a/libs/video/tests/test_gcm_overrun.c b/libs/video/tests/test_gcm_overrun.c
+new file mode 100644
+index 00000000..d222db61
+--- /dev/null
++++ b/libs/video/tests/test_gcm_overrun.c
+@@ -0,0 +1,155 @@
++/* A title's `current` reaching its ring's end is not yet an overrun (cellGcmSys.c).
++ *
++ * The title fills the ring, then calls its callback, and for that instant `current`
++ * reads end. A drain landing there used to recycle the ring on the title's behalf,
++ * dropping every queued command, flip included, and PES 2013 then waited for that flip
++ * forever. A title that really is stuck at end, as AMGL's callback leaves it, must still
++ * be recycled, and an end position that keeps moving is not stuck.
++ *
++ * clang -std=gnu17 -w -I include -I libs/video -I runtime/platform -Wl,-dead_strip
++ *   -ffunction-sections -fdata-sections -pthread libs/video/tests/test_gcm_overrun.c
++ *   runtime/platform/win32_compat.c -o /tmp/test_gcm_overrun
++ */
++#include "../cellGcmSys.c"
++#include <unistd.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++uint8_t* vm_base;
++uint32_t ppu_vm_size;
++int g_resv_store_active;
++uint32_t g_ww_lo, g_ww_hi;
++void ppu_resv_break_store(uint64_t ea) { (void)ea; }
++void ps3_ww_report_inline(uint32_t a, uint64_t v, int w) { (void)a; (void)v; (void)w; }
++int spu_coh_is_reserved(uint32_t a) { (void)a; return 0; }
++void spu_coh_notify_write(uint32_t a) { (void)a; }
++void spu_lockline_lock(void) {}
++void spu_lockline_unlock(void) {}
++ps3_guest_caller_fn g_ps3_guest_caller;
++/* The walker's other consumers: no graphics backend, no lifted program. */
++PPU_THREAD_LOCAL ppu_context* g_active_ctx;
++u32 g_rsx_last_reference;
++void (*g_spu_put_hook)(uint32_t ea, uint32_t size);
++void ppu_dump_bctrl_ring(uint32_t n, const char* why) { (void)n; (void)why; }
++void ppu_dump_guest_stack(ppu_context* c, const char* why) { (void)c; (void)why; }
++void rsx_state_init(rsx_state* state) { (void)state; }
++int  rsx_process_method(rsx_state* state, u32 method, u32 data) { (void)state; (void)method; (void)data; return 0; }
++int  rsx_draw_engine_enabled(void) { return 1; }
++/* The label each RELEASE found when it reached the engine, which is before it lands:
++ * a title reads what the RSX rendered as soon as the label moves. */
++static u32 engine_release_label[8], engine_release_n;
++void rsx_draw_engine_method(u32 method, u32 arg)
++{
++    (void)arg;
++    if (method == 0x6Cu && engine_release_n < 8)
++        engine_release_label[engine_release_n++] = vm_read32(GCM_LABEL_GUEST_BASE + 0x10u);
++}
++void rsx_draw_engine_note_flip(u32 buffer_id) { (void)buffer_id; }
++void rsx_draw_engine_guest_read(u32 l, u32 o, u32 p, u32 w, u32 h) { (void)l; (void)o; (void)p; (void)w; (void)h; }
++void rsx_draw_engine_guest_wrote(u32 l, u32 o, u32 p, u32 w, u32 h) { (void)l; (void)o; (void)p; (void)w; (void)h; }
++int  rsx_live_draw_enabled(void) { return 0; }
++void rsx_live_draw_method(u32 method, u32 arg) { (void)method; (void)arg; }
++int  rsx_live_draw_blit(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 w, u32 h)
++{ (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)w; (void)h; return 0; }
++void rsx_live_draw_note_resolve(u32 a, u32 b, u32 c, u32 d) { (void)a; (void)b; (void)c; (void)d; }
++int  rsx_live_draw_resolve_blit(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g, u32 h,
++                                u32 i, u32 j, u32 k, u32 l)
++{ (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)g; (void)h; (void)i; (void)j; (void)k; (void)l; return 0; }
++
++#define SEMA_OFF  0x10u
++#define LABEL_EA  (GCM_LABEL_GUEST_BASE + SEMA_OFF)
++
++/* Records the label and get each time a probe user command runs. */
++static u32 seen_get[8], seen_label[8], seen_n;
++void rsx_raise_user_cmd(uint32_t arg)
++{
++    if (arg < 8) {
++        seen_get[arg] = vm_read32(GCM_CONTROL_GUEST_ADDR + 4);
++        seen_label[arg] = vm_read32(LABEL_EA);
++        seen_n++;
++    }
++}
++
++#define IO_ADDR   0x00100000u
++#define IO_SIZE   0x00100000u
++#define CMD_SIZE  0x00010000u
++
++static uint32_t g_heap = 0x00400000u;
++static u32 host_alloc(u32 size, u32 align)
++{
++    if (!align) align = 4;
++    g_heap = (g_heap + align - 1u) & ~(align - 1u);
++    u32 r = g_heap;
++    g_heap += size;
++    return r;
++}
++static void gw32(uint32_t ea, uint32_t v)
++{
++    uint8_t* p = vm_base + ea;
++    p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16); p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v;
++}
++static void host_w32(u32 ea, u32 v) { gw32(ea, v); }
++
++static int fails;
++static void check(int ok, const char* what)
++{
++    printf("[%s] %s\n", ok ? "PASS" : "FAIL", what);
++    fails += !ok;
++}
++
++/* An incrementing method header: count words, subchannel subch. */
++static u32 put_cmd(u32 io, u32 subch, u32 method, u32 count, const u32* args)
++{
++    gw32(IO_ADDR + io, (count << 18) | (subch << 13) | method);
++    for (u32 i = 0; i < count; i++) gw32(IO_ADDR + io + 4 + i * 4, args[i]);
++    return io + 4 + count * 4;
++}
++static u32 put_probe(u32 io, u32 arg) { return put_cmd(io, 7, 0x0B00u, 1, &arg); }
++
++int main(void)
++{
++    setvbuf(stdout, NULL, _IONBF, 0);
++    const uint32_t vm_size = ppu_hle_inject_base + 0x10000u;
++    vm_base = (uint8_t*)calloc(1, vm_size);
++    if (!vm_base) { puts("FAIL: guest VM alloc"); return 1; }
++    ppu_vm_size = vm_size;
++
++    u32 ctx_out = host_alloc(4, 4);
++    (void)cellGcmSetupContext(ctx_out, CMD_SIZE, IO_SIZE, IO_ADDR, host_alloc, host_w32);
++    const uint32_t ctrl = (uint32_t)(uintptr_t)cellGcmGetControlRegister();
++    const u32 ctx = vm_read32(ctx_out);
++    const u32 begin = vm_read32(ctx + 0), end = vm_read32(ctx + 4);
++    check(begin && end > begin, "the title has a ring");
++
++    /* A queued command, and the title's current at the end of the ring. */
++    u32 io = put_probe(0, 0);
++    s_fifo_getoff = 0;
++    vm_write32(ctrl + 4, 0);
++    vm_write32(ctrl + 0, io);
++    vm_write32(ctx + 8, end);
++    cellGcm_rsx_process_fifo();
++    check(vm_read32(ctx + 8) == end, "the first pass at end leaves the ring alone");
++
++    /* Still there, but it moved: the title is working, not stuck. */
++    usleep(300000);
++    vm_write32(ctx + 8, end + 4);
++    cellGcm_rsx_process_fifo();
++    check(vm_read32(ctx + 8) == end + 4, "a current that moved restarts the wait");
++
++    /* Back inside the ring: the callback ran, nothing is remembered. */
++    vm_write32(ctx + 8, begin + 16);
++    cellGcm_rsx_process_fifo();
++    usleep(300000);
++    vm_write32(ctx + 8, end);
++    cellGcm_rsx_process_fifo();
++    check(vm_read32(ctx + 8) == end, "leaving end and coming back starts over");
++
++    /* Unmoved past the wait: wedged, and recovered. */
++    usleep(300000);
++    cellGcm_rsx_process_fifo();
++    check(vm_read32(ctx + 8) == begin, "a current stuck at end is recycled");
++
++    printf("[gcm_overrun] %s (%d failed)\n", fails ? "FAIL" : "PASS", fails);
++    free(vm_base);
++    return fails ? 1 : 0;
++}
+diff --git a/libs/video/tests/test_metal_downscale.m b/libs/video/tests/test_metal_downscale.m
+new file mode 100644
+index 00000000..f11d0e0d
+--- /dev/null
++++ b/libs/video/tests/test_metal_downscale.m
+@@ -0,0 +1,125 @@
++/* PS3_DOWNSCALE in the Metal backend: the knob's spellings; the window fit;
++ * and eng_lanczos, the reduction an internal picture larger than the window
++ * goes through. A one-pixel checkerboard -- the finest detail a picture holds,
++ * the kind that shimmers on edges -- reduced 3x must come out an even grey,
++ * every source pixel weighed in; sampling (one source pixel per window pixel)
++ * gives black or white. The same sizes reuse the output; a source a shader may
++ * not read turns the option off. Needs a Metal device; no window.
++ *
++ *   clang -fobjc-arc -I include -I libs/video libs/video/tests/test_metal_downscale.m libs/video/rsx_texture_layout.c \
++ *     -Wl,-dead_strip -framework Metal -framework Cocoa -framework QuartzCore \
++ *     -o /tmp/test_metal_downscale && /tmp/test_metal_downscale
++ */
++#include "../rsx_metal_backend.m"
++#include <assert.h>
++
++float cellAvconfExt_display_gamma(void) { return 1.0f; }
++
++static id<MTLTexture> checker(NSUInteger w, NSUInteger h, MTLTextureUsage usage)
++{
++    MTLTextureDescriptor* td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
++                                                                                  width:w height:h mipmapped:NO];
++    td.usage = usage;
++    td.storageMode = MTLStorageModeShared;
++    id<MTLTexture> t = [s_dev newTextureWithDescriptor:td];
++    uint8_t* px = malloc(w * h * 4);
++    for (NSUInteger y = 0; y < h; y++)
++        for (NSUInteger x = 0; x < w; x++) {
++            uint8_t* p = px + (y * w + x) * 4;
++            const uint8_t v = ((x ^ y) & 1) ? 255 : 0;
++            p[0] = p[1] = p[2] = v; p[3] = 255;
++        }
++    [t replaceRegion:MTLRegionMake2D(0, 0, w, h) mipmapLevel:0 withBytes:px bytesPerRow:w * 4];
++    free(px);
++    return t;
++}
++
++int main(void)
++{
++    @autoreleasepool {
++        /* the knob: on unless 0 or off */
++        assert(downscale_from(NULL) == 1 && downscale_from("") == 1);
++        assert(downscale_from("0") == 0 && downscale_from("off") == 0 && downscale_from("OFF") == 0);
++        assert(downscale_from("1") == 1 && downscale_from("lanczos") == 1 && downscale_from("what") == 1);
++
++        /* the fit: the largest guest-shaped size in the view's pixels */
++        double fw, fh;
++        wm_fit(1920, 1080, 3840, 2160, &fw, &fh); assert(fw == 1920 && fh == 1080);
++        wm_fit(1920, 1200, 3840, 2160, &fw, &fh); assert(fw == 1920 && fh == 1080);   /* bars top and bottom */
++        wm_fit(1000, 1080, 1280, 720, &fw, &fh);  assert(fw == 1000 && fh == 563);
++        wm_fit(0, 1080, 1280, 720, &fw, &fh);     assert(fw == 0 && fh == 0);
++
++        s_dev = MTLCreateSystemDefaultDevice();
++        if (!s_dev) { puts("test_metal_downscale: no Metal device, skipped"); return 0; }
++        s_queue = [s_dev newCommandQueue];
++
++        id<MTLTexture> src = checker(192, 108, MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget);
++        id<MTLCommandBuffer> cb = [s_queue commandBuffer];
++        id<MTLTexture> out = eng_lanczos(cb, src, 64, 36);
++        if (!out) {
++            assert(!s_down_on);
++            puts("test_metal_downscale: MetalPerformanceShaders not available here, fallback checked");
++            return 0;
++        }
++        assert([out width] == 64 && [out height] == 36 && [out storageMode] == MTLStorageModePrivate);
++        id<MTLTexture> back = checker(64, 36, MTLTextureUsageShaderRead);
++        id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
++        [b copyFromTexture:out toTexture:back];
++        [b endEncoding];
++        [cb commit];
++        [cb waitUntilCompleted];
++        assert([cb status] == MTLCommandBufferStatusCompleted);
++        uint8_t* px = malloc(64 * 36 * 4);
++        [back getBytes:px bytesPerRow:64 * 4 fromRegion:MTLRegionMake2D(0, 0, 64, 36) mipmapLevel:0];
++        int lo = 255, hi = 0;
++        for (int y = 4; y < 32; y++)            /* away from the edges' clamping */
++            for (int x = 4; x < 60; x++) {
++                const int v = px[(y * 64 + x) * 4 + 1];
++                if (v < lo) lo = v;
++                if (v > hi) hi = v;
++            }
++        free(px);
++        printf("test_metal_downscale: checkerboard 192x108 -> 64x36 gives %d..%d\n", lo, hi);
++        assert(lo > 80 && hi < 175);            /* grey, not black or white pixels */
++
++        /* a solid white picture stays white, edges included: taps past the
++         * edge must read the edge, not black */
++        {
++            id<MTLTexture> white = checker(192, 108, MTLTextureUsageShaderRead);
++            u8* wp = malloc(192 * 108 * 4);
++            memset(wp, 255, 192 * 108 * 4);
++            [white replaceRegion:MTLRegionMake2D(0, 0, 192, 108) mipmapLevel:0 withBytes:wp bytesPerRow:192 * 4];
++            free(wp);
++            id<MTLCommandBuffer> wcb = [s_queue commandBuffer];
++            id<MTLTexture> wout = eng_lanczos(wcb, white, 64, 36);
++            assert(wout);
++            id<MTLTexture> wback = checker(64, 36, MTLTextureUsageShaderRead);
++            id<MTLBlitCommandEncoder> wb = [wcb blitCommandEncoder];
++            [wb copyFromTexture:wout toTexture:wback];
++            [wb endEncoding];
++            [wcb commit];
++            [wcb waitUntilCompleted];
++            u8* w = malloc(64 * 36 * 4);
++            [wback getBytes:w bytesPerRow:64 * 4 fromRegion:MTLRegionMake2D(0, 0, 64, 36) mipmapLevel:0];
++            int wmin = 255;
++            for (int i = 0; i < 64 * 36 * 4; i++) if ((i & 3) != 3 && w[i] < wmin) wmin = w[i];
++            free(w);
++            printf("test_metal_downscale: white 192x108 -> 64x36 gives at least %d\n", wmin);
++            assert(wmin >= 254);
++        }
++
++        /* the same sizes reuse the output */
++        cb = [s_queue commandBuffer];
++        assert(eng_lanczos(cb, src, 64, 36) == out);
++        [cb commit]; [cb waitUntilCompleted];
++
++        /* a source a shader may not read: it gives up and stays off */
++        id<MTLTexture> bad = checker(192, 108, MTLTextureUsageRenderTarget);
++        cb = [s_queue commandBuffer];
++        assert(eng_lanczos(cb, bad, 64, 36) == nil);
++        assert(!s_down_on);
++        [cb commit]; [cb waitUntilCompleted];
++        puts("test_metal_downscale: ok");
++    }
++    return 0;
++}
+diff --git a/libs/video/tests/test_metal_res_scale.m b/libs/video/tests/test_metal_res_scale.m
+new file mode 100644
+index 00000000..0e6411bc
+--- /dev/null
++++ b/libs/video/tests/test_metal_res_scale.m
+@@ -0,0 +1,163 @@
++/* PS3_RES_SCALE in the Metal backend: the knob's spellings; targets made at
++ * the scaled size (a seeded colour target filled nearest-neighbour); views and
++ * copies that inherit it; viewports and scissors that follow; and readbacks,
++ * colour and depth, that hand the guest its own pixels back (also at 1.5);
++ * a depth target read as A8R8G8B8 converted at the guest's size from the
++ * scaled depth; and the frame dump's box filter. Needs a Metal device; no
++ * window.
++ *
++ *   clang -fobjc-arc -I include -I libs/video libs/video/tests/test_metal_res_scale.m libs/video/rsx_texture_layout.c \
++ *     -Wl,-dead_strip -framework Metal -framework Cocoa -framework QuartzCore \
++ *     -o /tmp/test_metal_res_scale && /tmp/test_metal_res_scale
++ */
++#include "../rsx_metal_backend.m"
++#include <assert.h>
++#include <math.h>
++
++float cellAvconfExt_display_gamma(void) { return 1.0f; }
++
++static const char* fixture =
++"#include <metal_stdlib>\nusing namespace metal;\n"
++"struct V { float4 p [[position]]; };\n"
++"vertex V vs(uint i [[vertex_id]]) { float2 p[3]={float2(-1,-1),float2(3,-1),float2(-1,3)}; return {float4(p[i],0,1)}; }\n"
++/* every 2x2 block one value: the guest pixel it stands for */
++"struct D { float d [[depth(any)]]; }; fragment D fs(V v [[stage_in]]) {"
++" return {0.125f + floor(v.p.x * 0.5f) * 0.125f + floor(v.p.y * 0.5f) * 0.0625f}; }\n";
++static float expected(u32 x, u32 y) { return .125f + x * .125f + y * .0625f; }
++
++int main(void)
++{
++    @autoreleasepool {
++        /* the knob */
++        assert(res_scale_from(NULL) == 1.0f && res_scale_from("") == 1.0f);
++        assert(res_scale_from("2") == 2.0f && res_scale_from("1.5") == 1.5f && res_scale_from("2x") == 2.0f);
++        assert(res_scale_from("1080p") == 1.5f && res_scale_from("1440P") == 2.0f && res_scale_from("4k") == 3.0f);
++        assert(res_scale_from("720p") == 1.0f && res_scale_from("1.6") == 1.5f);   /* quarter steps */
++        assert(res_scale_from("5") == 1.0f && res_scale_from("0.5") == 1.0f && res_scale_from("big") == 1.0f);
++
++        s_dev = MTLCreateSystemDefaultDevice();
++        if (!s_dev) { puts("test_metal_res_scale: no Metal device, skipped"); return 0; }
++        s_queue = [s_dev newCommandQueue];
++        s_res_scale = 2.0f;
++        assert(res_px(4) == 8 && res_px(3) == 6 && res_px(0) == 0);
++        assert(eng_init(NULL, 4, 3) == 0);
++
++        /* a seeded colour target: 8x6, each guest pixel a 2x2 block */
++        u8 seed[4 * 3 * 4];
++        for (u32 i = 0; i < 12; i++) { seed[i * 4] = (u8)(i * 20); seed[i * 4 + 1] = (u8)(255 - i); seed[i * 4 + 2] = 7; seed[i * 4 + 3] = 255; }
++        const u32 color = eng_color_target_create(NULL, RSX_BE_FMT_R8G8B8A8, 4, 3, seed, 16);
++        assert(color && eng_obj_is_scaled(color));
++        assert([eng_obj(color) width] == 8 && [eng_obj(color) height] == 6);
++        u8 big[8 * 6 * 4];
++        [eng_obj(color) getBytes:big bytesPerRow:32 fromRegion:MTLRegionMake2D(0, 0, 8, 6) mipmapLevel:0];
++        assert(!memcmp(big + (3 * 8 + 5) * 4, seed + (1 * 4 + 2) * 4, 4));   /* (5,3) -> guest (2,1) */
++        /* read back at the guest's size: the seed, exactly */
++        u8 back[4 * 3 * 4];
++        memset(back, 0xCD, sizeof back);
++        eng_readback(NULL, color, 0, 0, 4, 3, back, 16);
++        assert(!memcmp(back, seed, sizeof seed));
++        u8 roi[2 * 2 * 4 + 4];
++        memset(roi, 0xCD, sizeof roi);
++        eng_readback(NULL, color, 1, 1, 2, 2, roi, 12);                     /* padded rows */
++        assert(!memcmp(roi, seed + (1 * 4 + 1) * 4, 8) && !memcmp(roi + 12, seed + (2 * 4 + 1) * 4, 8));
++        assert(roi[8] == 0xCD);
++
++        /* a view and a copy of it are scaled too; a guest texture is not */
++        const u32 view = eng_surface_view(NULL, color, 0xAAE4, 0x85);
++        assert(view && eng_obj_is_scaled(view));
++        const u32 copy = eng_color_snapshot(NULL, color);
++        assert(copy && eng_obj_is_scaled(copy) && [eng_obj(copy) width] == 8);
++        const u32 tex = eng_texture_create(NULL, RSX_BE_FMT_R8G8B8A8, 4, 3, 1, 1, 0xAAE4, 0x85);
++        assert(tex && !eng_obj_is_scaled(tex) && [eng_obj(tex) width] == 4);
++
++        /* viewport and scissor follow the targets */
++        eng_set_viewport(NULL, 0.0f, 0.0f, 4.0f, 3.0f);
++        assert(s_eng_pending.vp[2] == 8.0f && s_eng_pending.vp[3] == 6.0f);
++        eng_set_scissor(NULL, 1, 1, 3, 2);
++        assert(s_eng_pending.sc[0] == 2 && s_eng_pending.sc[1] == 2 && s_eng_pending.sc[2] == 6 && s_eng_pending.sc[3] == 4);
++
++        /* depth: 8x6, its snapshot 8x6, its readback the guest's 4x3 */
++        const u32 depth = eng_depth_target_create(NULL, 4, 3);
++        assert(depth && eng_obj_is_scaled(depth) && [eng_obj(depth) width] == 8);
++        NSError* err = nil;
++        id<MTLLibrary> lib = [s_dev newLibraryWithSource:@(fixture) options:nil error:&err];
++        assert(lib);
++        MTLRenderPipelineDescriptor* pd = [MTLRenderPipelineDescriptor new];
++        pd.vertexFunction = [lib newFunctionWithName:@"vs"];
++        pd.fragmentFunction = [lib newFunctionWithName:@"fs"];
++        pd.depthAttachmentPixelFormat = MTL_DEPTH_FORMAT; pd.stencilAttachmentPixelFormat = MTL_DEPTH_FORMAT;
++        id<MTLRenderPipelineState> pso = [s_dev newRenderPipelineStateWithDescriptor:pd error:&err];
++        assert(pso);
++        MTLRenderPassDescriptor* rp = [MTLRenderPassDescriptor renderPassDescriptor];
++        rp.depthAttachment.texture = eng_obj(depth); rp.depthAttachment.loadAction = MTLLoadActionClear;
++        rp.depthAttachment.clearDepth = 1; rp.depthAttachment.storeAction = MTLStoreActionStore;
++        rp.stencilAttachment.texture = eng_obj(depth); rp.stencilAttachment.loadAction = MTLLoadActionClear;
++        rp.stencilAttachment.storeAction = MTLStoreActionStore;
++        id<MTLCommandBuffer> cb = [s_queue commandBuffer];
++        id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:rp];
++        MTLDepthStencilDescriptor* dsd = [MTLDepthStencilDescriptor new];
++        dsd.depthCompareFunction = MTLCompareFunctionAlways; dsd.depthWriteEnabled = YES;
++        [e setRenderPipelineState:pso]; [e setDepthStencilState:[s_dev newDepthStencilStateWithDescriptor:dsd]];
++        [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
++        [e endEncoding]; [cb commit]; [cb waitUntilCompleted];
++        assert(cb.status == MTLCommandBufferStatusCompleted);
++        const u32 snap = eng_depth_snapshot(NULL, depth, 4, 3);
++        assert(snap && eng_obj_is_scaled(snap) && [eng_obj(snap) width] == 8 && [eng_obj(snap) height] == 6);
++        float dz[4 * 3 + 2];
++        for (int i = 0; i < 14; i++) dz[i] = -7.0f;
++        assert(eng_depth_readback(NULL, depth, 0, 0, 4, 3, dz, 16) == 0);
++        for (u32 y = 0; y < 3; y++)
++            for (u32 x = 0; x < 4; x++) assert(fabsf(dz[y * 4 + x] - expected(x, y)) < 1e-6f);
++        float droi[3] = { -9, -9, -9 };
++        assert(eng_depth_readback(NULL, depth, 2, 1, 2, 1, droi, 12) == 0);
++        assert(fabsf(droi[0] - expected(2, 1)) < 1e-6f && fabsf(droi[1] - expected(3, 1)) < 1e-6f && droi[2] == -9);
++        /* read as A8R8G8B8 (a shadow map the game samples as colour): the
++         * guest's 4x3, each texel the packed depth of its guest pixel */
++        const u32 argb = eng_depth_to_argb(NULL, depth, 0, 4, 3);
++        assert(argb && !eng_obj_is_scaled(argb) && [eng_obj(argb) width] == 4 && [eng_obj(argb) height] == 3);
++        eng_encode_and_commit(nil);
++        assert(!s_eng_encoding_failed);
++        { id<MTLBuffer> buf = [s_dev newBufferWithLength:4 * 4 * 3 options:MTLResourceStorageModeShared];
++          id<MTLCommandBuffer> c2 = [s_queue commandBuffer];
++          id<MTLBlitCommandEncoder> b = [c2 blitCommandEncoder];
++          [b copyFromTexture:eng_obj(argb) sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0, 0, 0)
++                  sourceSize:MTLSizeMake(4, 3, 1) toBuffer:buf destinationOffset:0
++      destinationBytesPerRow:16 destinationBytesPerImage:48];
++          [b endEncoding]; [c2 commit]; [c2 waitUntilCompleted];
++          const u8* px = (const u8*)[buf contents];
++          for (u32 y = 0; y < 3; y++)
++              for (u32 x = 0; x < 4; x++) {
++                  const u32 v = (u32)fminf(expected(x, y) * 16777215.0f + 0.5f, 16777215.0f);
++                  const u8* q = px + (y * 4 + x) * 4;      /* R = [15:8], G = [7:0], A = [23:16] */
++                  assert(q[0] == ((v >> 8) & 0xFF) && q[1] == (v & 0xFF) && q[2] == 0 && q[3] == (v >> 16));
++              }
++        }
++
++        /* at 1.5 a seed goes up and comes back exactly */
++        s_res_scale = 1.5f;
++        assert(res_px(4) == 6 && res_px(3) == 5);
++        const u32 c15 = eng_color_target_create(NULL, RSX_BE_FMT_R8G8B8A8, 4, 3, seed, 16);
++        assert(c15 && eng_obj_is_scaled(c15) && [eng_obj(c15) width] == 6 && [eng_obj(c15) height] == 5);
++        memset(back, 0xCD, sizeof back);
++        eng_readback(NULL, c15, 0, 0, 4, 3, back, 16);
++        assert(!memcmp(back, seed, sizeof seed));
++        eng_set_scissor(NULL, 0, 0, 4, 3);
++        assert(s_eng_pending.sc[2] == 6 && s_eng_pending.sc[3] == 5);   /* to the target's edge */
++        s_res_scale = 2.0f;
++
++        /* the frame dump's box filter: each 2x2 block averaged */
++        { u8 img[4 * 2 * 4];
++          for (int i = 0; i < 8; i++) { img[i * 4] = (u8)(i * 10); img[i * 4 + 1] = 100; img[i * 4 + 2] = (u8)(i < 4 ? 0 : 255); img[i * 4 + 3] = 255; }
++          eng_res_box_down(img, 4, 2, 2, 1);
++          assert(img[0] == 25 && img[1] == 100 && img[2] == 128 && img[4] == 45); }
++
++        /* at 1, nothing is scaled */
++        s_res_scale = 1.0f;
++        const u32 plain = eng_color_target_create(NULL, RSX_BE_FMT_R8G8B8A8, 4, 3, seed, 16);
++        assert(plain && !eng_obj_is_scaled(plain) && [eng_obj(plain) width] == 4);
++        eng_set_viewport(NULL, 0.0f, 0.0f, 4.0f, 3.0f);
++        assert(s_eng_pending.vp[2] == 4.0f);
++        puts("test_metal_res_scale: ok");
++    }
++    return 0;
++}
+diff --git a/libs/video/tests/test_nv308a_inline.c b/libs/video/tests/test_nv308a_inline.c
+new file mode 100644
+index 00000000..d272452a
+--- /dev/null
++++ b/libs/video/tests/test_nv308a_inline.c
+@@ -0,0 +1,83 @@
++/* NV308A image-from-CPU: cellGcmSetInlineTransfer sends up to 1792 words in one
++ * burst, as methods 0x0400..0x1FFC. Words past 0x07FC used to be dropped: everything
++ * after the first 1024 bytes of an upload stayed zero. PES 2013 uploads its fragment
++ * programs this way, and its characters drew with the end of their programs missing.
++ *
++ * clang -std=gnu17 -I include -I libs/video libs/video/tests/test_nv308a_inline.c -Wl,-dead_strip
++ *   -o /tmp/test_nv308a_inline && /tmp/test_nv308a_inline
++ *   (gcc: -ffunction-sections -fdata-sections -Wl,--gc-sections)
++ */
++#include "../cellGcmSys.c"
++#include <stdio.h>
++#include <stdlib.h>
++uint8_t* vm_base;
++uint32_t ppu_vm_size;
++int g_resv_store_active;
++uint32_t g_ww_lo, g_ww_hi;
++void ppu_resv_break_store(uint64_t ea) { (void)ea; }
++void ps3_ww_report_inline(uint32_t a, uint64_t v, int w) { (void)a; (void)v; (void)w; }
++int spu_coh_is_reserved(uint32_t a) { (void)a; return 0; }
++void spu_coh_notify_write(uint32_t a) { (void)a; }
++void spu_lockline_lock(void) {}
++void spu_lockline_unlock(void) {}
++ps3_guest_caller_fn g_ps3_guest_caller;
++/* The rest of the walker's world: no graphics backend, no lifted program. */
++PPU_THREAD_LOCAL ppu_context* g_active_ctx;
++u32 g_rsx_last_reference;
++void (*g_spu_put_hook)(uint32_t ea, uint32_t size);
++void rsx_raise_user_cmd(uint32_t arg) { (void)arg; }
++void ppu_dump_bctrl_ring(uint32_t n, const char* why) { (void)n; (void)why; }
++void ppu_dump_guest_stack(ppu_context* c, const char* why) { (void)c; (void)why; }
++void rsx_state_init(rsx_state* state) { (void)state; }
++int  rsx_process_method(rsx_state* state, u32 method, u32 data) { (void)state; (void)method; (void)data; return 0; }
++int  rsx_draw_engine_enabled(void) { return 1; }
++void rsx_draw_engine_method(u32 method, u32 arg) { (void)method; (void)arg; }
++void rsx_draw_engine_note_flip(u32 buffer_id) { (void)buffer_id; }
++/* guest_read is defined below: it plays the engine's part. */
++void rsx_draw_engine_guest_wrote(u32 l, u32 o, u32 p, u32 w, u32 h) { (void)l; (void)o; (void)p; (void)w; (void)h; }
++int  rsx_live_draw_enabled(void) { return 0; }
++void rsx_live_draw_method(u32 method, u32 arg) { (void)method; (void)arg; }
++int  rsx_live_draw_blit(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 w, u32 h)
++{ (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)w; (void)h; return 0; }
++void rsx_live_draw_note_resolve(u32 a, u32 b, u32 c, u32 d) { (void)a; (void)b; (void)c; (void)d; }
++int  rsx_live_draw_resolve_blit(u32 a, u32 b, u32 c, u32 d, u32 e, u32 f, u32 g, u32 h,
++                                u32 i, u32 j, u32 k, u32 l)
++{ (void)a; (void)b; (void)c; (void)d; (void)e; (void)f; (void)g; (void)h; (void)i; (void)j; (void)k; (void)l; return 0; }
++
++
++#define LOCAL_BASE 0x00200000u      /* where "local memory" sits in the test's guest VM */
++#define DST_OFF    0x00100000u
++#define WORDS      1792u            /* NV308A's COLOR array: 0x0400..0x1FFC */
++
++void rsx_draw_engine_guest_read(u32 l, u32 o, u32 p, u32 w, u32 h)
++{ (void)l; (void)o; (void)p; (void)w; (void)h; }
++
++int main(void)
++{
++    setvbuf(stdout, NULL, _IONBF, 0);
++    const uint32_t vm_size = LOCAL_BASE + 0x00400000u;
++    vm_base = (uint8_t*)calloc(1, vm_size);
++    if (!vm_base) { puts("FAIL: guest VM alloc"); return 1; }
++    ppu_vm_size = vm_size;
++    ppu_hle_inject_base = vm_size;
++    s_config.localAddress = LOCAL_BASE;
++
++    gcm_2d_method(2, 0x0184, 0xFEED0000u);          /* NV3062: destination in local memory */
++    gcm_2d_method(2, 0x0304, 0x20002000u);          /* pitch 0x2000, both halves */
++    gcm_2d_method(2, 0x030C, DST_OFF);
++    gcm_2d_method(4, 0x0304, 0u);                   /* NV308A: point 0,0 */
++    gcm_2d_method(4, 0x0308, (1u << 16) | WORDS);
++    for (u32 i = 0; i < WORDS; i++)
++        gcm_2d_method(4, 0x0400 + i * 4u, 0xA5000000u | i);
++
++    int fails = 0;
++    for (u32 i = 0; i < WORDS; i++) {
++        const u32 got = vm_read32(LOCAL_BASE + DST_OFF + i * 4u);
++        if (got != (0xA5000000u | i)) {
++            if (fails++ < 3) printf("FAIL: word %u = 0x%08X\n", i, got);
++        }
++    }
++    printf("[nv308a_inline] %s (%d words wrong of %u)\n", fails ? "FAIL" : "PASS", fails, WORDS);
++    free(vm_base);
++    return fails ? 1 : 0;
++}
+diff --git a/libs/video/tests/test_texture_packs.c b/libs/video/tests/test_texture_packs.c
+new file mode 100644
+index 00000000..c0b9a8d8
+--- /dev/null
++++ b/libs/video/tests/test_texture_packs.c
+@@ -0,0 +1,250 @@
++/*
++ * ps3recomp - texture packs (PS3_MODS, PS3_MODS_DIR, PS3_MODS_DUMP) in the
++ * draw engine: pack file names, the content key, pack order, the
++ * replacement's upload and mips, what is refused, the DXT decode the dump
++ * uses, and a guest texture replaced and dumped end to end through
++ * eng_texture_upload. A stub backend stands in for the image files.
++ *
++ *   clang -std=gnu17 -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -I include -I libs/video \
++ *     -o /tmp/test_texture_packs libs/video/tests/test_texture_packs.c libs/video/rsx_dispatch.c \
++ *     libs/video/rsx_vertex_compact.c libs/video/rsx_texture_layout.c libs/video/rsx_vp_decompiler.c \
++ *     libs/video/rsx_fp_decompiler.c && /tmp/test_texture_packs
++ *
++ * The packs it makes go under $TMPDIR (else /tmp) and are removed at the end.
++ */
++#include "../rsx_draw_engine.c"
++#include <assert.h>
++#include <unistd.h>
++
++u8* vm_base;
++u32 ppu_vm_size;
++u32 cellGcmResolveLocated(int local, u32 offset) { return local ? (1u << 20) + offset : offset; }
++u32 cellGcmResolveIO(u32 offset) { return offset; }
++void cellGcm_replay_display_buffers_to_engine(void) {}
++
++/* ---- the stub backend ---------------------------------------------------- */
++static struct {
++    u32 next;
++    u32 created_w, created_h, created_mips, created_fmt, created_remap, created_rsx_fmt;
++    int n_create, n_upload, n_release;
++    u32 up_w[16], up_h[16], up_mip[16];
++    u8  first_texel[4];
++    int n_load, n_save;
++    char saved_path[700];
++    u32 saved_w, saved_h;
++    u8  saved_first[4];
++} st;
++
++static u32 stub_create(void* u, rsx_be_format fmt, u32 w, u32 h, u32 mips, u32 faces, u32 remap, u32 rsx_fmt)
++{
++    st.n_create++;
++    st.created_w = w; st.created_h = h; st.created_mips = mips; st.created_fmt = fmt;
++    st.created_remap = remap; st.created_rsx_fmt = rsx_fmt;
++    return ++st.next;
++}
++static void stub_upload(void* u, u32 t, u32 face, u32 mip, u32 w, u32 h, const void* src, u32 row, u32 rows)
++{
++    if (st.n_upload < 16) { st.up_w[st.n_upload] = w; st.up_h[st.n_upload] = h; st.up_mip[st.n_upload] = mip; }
++    if (mip == 0) memcpy(st.first_texel, src, 4);
++    st.n_upload++;
++}
++static void stub_release(void* u, u32 t) { st.n_release++; }
++/* An "image": its size is in the file name after an 'x' (…_16x8.png), every
++ * texel the same colour, 10 20 30 40. */
++static int stub_load(void* u, const char* path, u8** rgba, u32* w, u32* h)
++{
++    st.n_load++;
++    const char* p = strrchr(path, '_');
++    unsigned a = 0, b = 0;
++    if (!p || sscanf(p + 1, "%ux%u", &a, &b) != 2) return 0;
++    *rgba = (u8*)malloc((size_t)a * b * 4);
++    for (u32 i = 0; i < a * b; i++) { (*rgba)[i * 4] = 10; (*rgba)[i * 4 + 1] = 20; (*rgba)[i * 4 + 2] = 30; (*rgba)[i * 4 + 3] = 40; }
++    *w = a; *h = b;
++    return 1;
++}
++static int stub_save(void* u, const char* path, const u8* rgba, u32 w, u32 h, u32 row)
++{
++    st.n_save++;
++    snprintf(st.saved_path, sizeof st.saved_path, "%s", path);
++    st.saved_w = w; st.saved_h = h;
++    memcpy(st.saved_first, rgba, 4);
++    return 1;
++}
++static const rsx_draw_backend stub = {
++    .texture_create = stub_create, .texture_upload = stub_upload, .texture_release = stub_release,
++    .image_load = stub_load, .image_save = stub_save,
++};
++
++static void touch(const char* path)
++{
++    FILE* f = fopen(path, "wb");
++    assert(f);
++    fclose(f);
++}
++
++static void reset_mods(void)
++{
++    free(s_mods.e); free(s_mods.idx); free(s_mods.pool); free(s_mods.dumped);
++    memset(&s_mods, 0, sizeof s_mods);
++}
++
++int main(void)
++{
++    g.be = &stub;
++
++    /* ---- file names ---- */
++    assert(eng_mod_name_key("3f09a1c2b4d5e6f7.png") == 0x3f09a1c2b4d5e6f7ull);
++    assert(eng_mod_name_key("3F09A1C2B4D5E6F7_logo.PNG") == 0x3f09a1c2b4d5e6f7ull);
++    assert(eng_mod_name_key("3f09a1c2b4d5e6f.png") == 0);      /* 15 digits */
++    assert(eng_mod_name_key("3f09a1c2b4d5e6f7a.png") == 0);    /* a 17th digit */
++    assert(eng_mod_name_key("3f09a1c2b4d5e6f7.jpg") == 0);
++    assert(eng_mod_name_key("3f09a1c2b4d5e6f7") == 0);
++    assert(eng_mod_name_key("notes.txt") == 0);
++
++    /* ---- the key: content, base format and size; not the address ---- */
++    const u64 k1 = eng_texmod_key(0x1234, 0xA5, 64, 32);
++    assert(k1 && k1 == eng_texmod_key(0x1234, 0xA5, 64, 32));
++    assert(k1 != eng_texmod_key(0x1235, 0xA5, 64, 32));
++    assert(k1 != eng_texmod_key(0x1234, 0xA5, 32, 64));
++    assert(k1 != eng_texmod_key(0x1234, 0xA6, 64, 32));
++    assert(k1 == eng_texmod_key(0x1234, 0x85, 64, 32));      /* the LN bit (0x20) does not count */
++
++    /* ---- packs: order, nesting, a missing one ---- */
++    char root[600];
++    { const char* tmp = getenv("TMPDIR");
++      snprintf(root, sizeof root, "%s/texpacks_XXXXXX", tmp && *tmp ? tmp : "/tmp"); }
++    assert(mkdtemp(root));
++    char p[700];
++    snprintf(p, sizeof p, "%s/hd", root);              mkdir(p, 0755);
++    snprintf(p, sizeof p, "%s/hd/ui", root);           mkdir(p, 0755);
++    snprintf(p, sizeof p, "%s/base", root);            mkdir(p, 0755);
++    snprintf(p, sizeof p, "%s/hd/1111111111111111_16x8.png", root);     touch(p);
++    snprintf(p, sizeof p, "%s/hd/ui/2222222222222222_4x4.png", root);   touch(p);
++    snprintf(p, sizeof p, "%s/base/1111111111111111_8x8.png", root);    touch(p);   /* hd wins */
++    snprintf(p, sizeof p, "%s/base/3333333333333333_8x8.png", root);    touch(p);
++    snprintf(p, sizeof p, "%s/base/readme.txt", root);                  touch(p);
++    setenv("PS3_MODS_DIR", root, 1);
++    setenv("PS3_MODS", " hd, base ,nothere", 1);
++    unsetenv("PS3_MODS_DUMP");
++    reset_mods();
++    assert(eng_mods_wanted() && s_mods.on && s_mods.npacks == 2 && s_mods.n == 3);
++    assert(eng_mod_find(0x1111111111111111ull)->pack == 0);
++    assert(eng_mod_find(0x2222222222222222ull)->pack == 0);
++    assert(eng_mod_find(0x3333333333333333ull)->pack == 1);
++    assert(!eng_mod_find(0x4444444444444444ull));
++
++    /* ---- a replacement: RGBA8 at its own size, mips down to 1x1 ---- */
++    memset(&st, 0, sizeof st);
++    u32 h = eng_texmod_apply(0x1111111111111111ull, 0xA5, 64, 32, 7, 0xAAE4);
++    assert(h && st.n_create == 1 && st.created_fmt == RSX_BE_FMT_R8G8B8A8);
++    assert(st.created_w == 16 && st.created_h == 8 && st.created_mips == 5);   /* 16,8,4,2,1 */
++    assert(st.created_remap == 0xAAE4 && st.created_rsx_fmt == 0xA5);          /* the original's sampling */
++    assert(st.n_upload == 5 && st.up_w[4] == 1 && st.up_h[4] == 1 && st.up_mip[4] == 4);
++    assert(st.first_texel[0] == 10 && st.first_texel[3] == 40);
++    /* no mips in the original: none in the replacement */
++    memset(&st, 0, sizeof st);
++    assert(eng_texmod_apply(0x2222222222222222ull, 0xA5, 4, 4, 1, 0) && st.created_mips == 1 && st.n_upload == 1);
++    /* unnormalised coordinates (0x40): the size must stay */
++    memset(&st, 0, sizeof st);
++    assert(eng_texmod_apply(0x3333333333333333ull, 0xA5 | 0x40, 4, 4, 1, 0) == 0 && st.n_create == 0);
++    assert(eng_mod_find(0x3333333333333333ull)->bad);
++    assert(eng_texmod_apply(0x3333333333333333ull, 0xA5, 8, 8, 1, 0) == 0);   /* bad stays bad: no retry */
++    /* not in any pack */
++    assert(eng_texmod_apply(0x4444444444444444ull, 0xA5, 4, 4, 1, 0) == 0);
++
++    /* ---- the box filter ---- */
++    { const u8 src[2 * 2 * 4] = { 0,0,0,0,  4,8,12,16,  8,16,24,32,  12,24,36,48 };
++      u8 dst[4];
++      eng_rgba_half(src, 2, 2, dst, 1, 1);
++      assert(dst[0] == 6 && dst[1] == 12 && dst[2] == 18 && dst[3] == 24); }
++
++    /* ---- DXT1 for the dump: white/black palette ---- */
++    { const u8 blk[8] = { 0xFF, 0xFF, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00 };   /* texel 1 = index 1 */
++      u8 rgba[4 * 4 * 4];
++      eng_bc_decode(blk, 8, 4, 4, RSX_TEXFMT_BC1, rgba);
++      assert(rgba[0] == 255 && rgba[3] == 255);                 /* texel 0: c0 white */
++      assert(rgba[4] == 0 && rgba[5] == 0 && rgba[7] == 255); } /* texel 1: c1 black */
++
++    /* ---- end to end: a guest texture, replaced by content ---- */
++    vm_base = (u8*)calloc(2u << 20, 1);
++    const u32 off = 0x1000, W = 16, H = 16, FMT = 0xA5;        /* A8R8G8B8, linear */
++    for (u32 i = 0; i < W * H; i++) { vm_base[off + i * 4] = 0xFF; vm_base[off + i * 4 + 1] = (u8)i; }
++    int readable = 0;
++    const u64 content = eng_texture_content_hash(RSX_LOCATION_MAIN, off, W * H * 4, &readable);
++    assert(readable);
++    const u64 key = eng_texmod_key(content, FMT, W, H);
++    snprintf(p, sizeof p, "%s/base/%016llx_32x32.png", root, (unsigned long long)key);
++    touch(p);
++    char dump[700];
++    snprintf(dump, sizeof dump, "%s/dump", root);
++    setenv("PS3_MODS_DUMP", dump, 1);
++    reset_mods();
++    memset(&st, 0, sizeof st);
++    u32 hnd = eng_texture_upload(RSX_LOCATION_MAIN, off, FMT, W, H, 1, W * 4, 0, 0xAAE4, 1);
++    assert(hnd && st.created_w == 32 && st.created_h == 32);   /* the pack's, not the guest's */
++    assert(st.n_save == 1 && st.saved_w == W && st.saved_h == H);   /* and the original dumped */
++    { char want[700]; snprintf(want, sizeof want, "%s/%016llx.png", dump, (unsigned long long)key);
++      assert(!strcmp(st.saved_path, want)); }
++    /* the game rewrites the texture: a new key, no replacement, the original
++     * uploaded and dumped once */
++    vm_base[off] ^= 0x5A;
++    memset(&st, 0, sizeof st);
++    hnd = eng_texture_upload(RSX_LOCATION_MAIN, off, FMT, W, H, 1, W * 4, 0, 0xAAE4, 1);
++    assert(hnd && st.created_w == W && st.created_h == H && st.n_save == 1);
++    memset(&st, 0, sizeof st);
++    eng_texture_upload(RSX_LOCATION_MAIN, off, FMT, W, H, 1, W * 4, 0, 0xAAE4, 1);
++    assert(st.n_save == 0);                                    /* once a key */
++
++    /* ---- the level-0 key: a mipmapped texture whose smaller level changes
++     * between loads (PES 2013 uploads its kits before their mips are filled)
++     * still finds a pack file named by its level 0 ---- */
++    {
++        const u32 off2 = 0x8000;
++        for (u32 i = 0; i < W * H; i++) { vm_base[off2 + i * 4] = 0xFF; vm_base[off2 + i * 4 + 2] = (u8)(i * 3); }
++        int r0 = 0;
++        const u64 c0 = eng_texture_content_hash(RSX_LOCATION_MAIN, off2, W * H * 4, &r0);
++        assert(r0);
++        const u64 key0 = eng_texmod_key_level0(c0, FMT, W, H);
++        assert(key0 != eng_texmod_key(c0, FMT, W, H));
++        snprintf(p, sizeof p, "%s/base/%016llx_32x32.png", root, (unsigned long long)key0);
++        touch(p);
++        reset_mods();
++        memset(&st, 0, sizeof st);
++        hnd = eng_texture_upload(RSX_LOCATION_MAIN, off2, FMT, W, H, 2, W * 4, 0, 0xAAE4, 1);
++        assert(hnd && st.created_w == 32);                     /* replaced by the level-0 file */
++        /* the same image without mips (another copy of it): the same file */
++        memcpy(vm_base + 0x20000, vm_base + off2, W * H * 4);
++        memset(&st, 0, sizeof st);
++        assert(eng_texture_upload(RSX_LOCATION_MAIN, 0x20000, FMT, W, H, 1, W * 4, 0, 0xAAE4, 1)
++               && st.created_w == 32);
++        { char ix[760]; snprintf(ix, sizeof ix, "%s/textures-level0.txt", dump);
++          FILE* f = fopen(ix, "r"); assert(f);
++          char line[128], want[40]; int seen = 0;
++          snprintf(want, sizeof want, "%016llx", (unsigned long long)key0);
++          while (fgets(line, sizeof line, f)) seen |= strstr(line, want) != NULL;
++          fclose(f); assert(seen); }                           /* and listed by the dump */
++        vm_base[off2 + W * H * 4 + 5] ^= 0x77;                 /* level 1 differs, level 0 does not */
++        memset(&st, 0, sizeof st);
++        hnd = eng_texture_upload(RSX_LOCATION_MAIN, off2, FMT, W, H, 2, W * 4, 0, 0xAAE4, 1);
++        assert(hnd && st.created_w == 32);                     /* still replaced */
++        vm_base[off2 + 9] ^= 0x33;                             /* level 0 differs: not replaced */
++        memset(&st, 0, sizeof st);
++        hnd = eng_texture_upload(RSX_LOCATION_MAIN, off2, FMT, W, H, 2, W * 4, 0, 0xAAE4, 1);
++        assert(hnd && st.created_w == W);
++    }
++
++    /* ---- off: nothing runs ---- */
++    unsetenv("PS3_MODS");
++    unsetenv("PS3_MODS_DUMP");
++    reset_mods();
++    assert(!eng_mods_wanted());
++    memset(&st, 0, sizeof st);
++    hnd = eng_texture_upload(RSX_LOCATION_MAIN, off, FMT, W, H, 1, W * 4, 0, 0xAAE4, 1);
++    assert(hnd && st.n_load == 0 && st.n_save == 0 && st.created_w == W);
++
++    reset_mods();
++    snprintf(p, sizeof p, "rm -rf '%s'", root);
++    if (system(p) != 0) fprintf(stderr, "could not remove %s\n", root);
++    printf("test_texture_packs: ok\n");
++    return 0;
++}
+diff --git a/libs/video/tests/test_vp_const_usage.c b/libs/video/tests/test_vp_const_usage.c
+new file mode 100644
+index 00000000..d7f65db3
+--- /dev/null
++++ b/libs/video/tests/test_vp_const_usage.c
+@@ -0,0 +1,114 @@
++/*
++ * rsx_vp_analyze_constants against the decompiler it describes.
++ *
++ * The draw engine uploads only the vp_c[] rows this analysis reports, so a row
++ * it misses is a constant the shader reads as stale data. The check here is
++ * not against a second decoding of the fields but against the HLSL the
++ * decompiler actually emits: random programs are decompiled, every vp_c[...]
++ * in the text is collected, and each fixed index must fall inside the
++ * reported range, and a relative read in the shader must be reported as
++ * `relative` (the converse is allowed: it only costs a full upload).
++ *
++ * Build (from the repo root):
++ *   clang -std=gnu17 -Wall -Wextra -I include -I libs/video \
++ *     -o /tmp/test_vp_const_usage libs/video/tests/test_vp_const_usage.c \
++ *     libs/video/rsx_vp_decompiler.c
++ */
++#include "rsx_vp_decompiler.h"
++
++#include <stdint.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++static int fails;
++#define CHECK(c, ...) do { if (!(c)) { fails++; if (fails <= 20) { \
++    printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } } while (0)
++
++static uint64_t rng = 0x9E3779B97F4A7C15ull;
++static uint32_t rnd(void)
++{
++    rng ^= rng << 13; rng ^= rng >> 7; rng ^= rng << 17;
++    return (uint32_t)rng;
++}
++
++static void put_le(uint8_t* p, uint32_t v)
++{
++    p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8);
++    p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24);
++}
++
++/* One instruction with chosen source types. Opcodes are random over the
++ * whole field; flow-control and unknown ops are left in on purpose, since
++ * the analysis has to cover whatever the decompiler emits for them too. */
++static void make_instr(uint8_t* p, int last, int relative_bias)
++{
++    uint32_t d0 = rnd(), d1 = rnd(), d2 = rnd(), d3 = rnd();
++    /* Bias the source types toward constants (type 3) so most programs
++     * exercise the analysis. */
++    if (rnd() & 1) d1 = (d1 & ~0xFFu) | (((d1 & 0xFFu) & ~1u) | 1u);    /* src0 hi bits */
++    if (rnd() & 1) d2 = (d2 & ~(3u << 6)) | (3u << 6);                  /* src1 type = 3 */
++    if (rnd() & 1) d3 = (d3 & ~(3u << 21)) | (3u << 21);                /* src2 type low bits */
++    if (rnd() & 1) d2 = (d2 & ~(3u << 23)) | (3u << 23);                /* src0 type = 3 */
++    if (!relative_bias) d3 &= ~2u;          /* index_const off */
++    d3 &= ~1u;
++    if (last) d3 |= 1u;
++    put_le(p + 0, d0); put_le(p + 4, d1); put_le(p + 8, d2); put_le(p + 12, d3);
++}
++
++static char hlsl[1 << 20];
++
++int main(void)
++{
++    enum { PROGRAMS = 20000, MAXI = 24 };
++    static uint8_t uc[MAXI * 16];
++    int decompiled = 0, ranged = 0, relative = 0, over_relative = 0;
++    for (int n = 0; n < PROGRAMS; n++) {
++        const int instrs = 1 + (int)(rnd() % MAXI);
++        const int rel = (rnd() % 4) == 0;
++        for (int i = 0; i < instrs; i++) make_instr(uc + i * 16, i == instrs - 1, rel);
++
++        rsx_vp_const_usage u;
++        const int ai = rsx_vp_analyze_constants(uc, (uint32_t)instrs * 16u, &u);
++        CHECK(ai == instrs && u.valid, "program %d: analysis returned %d (valid %d) for %d instrs",
++              n, ai, u.valid, instrs);
++
++        const int r = rsx_vp_decompile(uc, (uint32_t)instrs * 16u, hlsl, sizeof hlsl);
++        if (r < 0) continue;
++        decompiled++;
++
++        int saw_relative = 0;
++        for (const char* q = hlsl; (q = strstr(q, "vp_c[")) != NULL; q += 5) {
++            const char* idx = q + 5;
++            /* The cbuffer declaration, not a read. */
++            if (q - hlsl >= 7 && !strncmp(q - 7, "float4 ", 7)) continue;
++            if (*idx == '(') { saw_relative = 1; continue; }
++            const unsigned c = (unsigned)strtoul(idx, NULL, 10);
++            CHECK(!u.relative ? (u.lo <= u.hi && c >= u.lo && c <= u.hi) : 1,
++                  "program %d: shader reads vp_c[%u] outside [%u, %u]", n, c, u.lo, u.hi);
++        }
++        /* One-way: a relative read the analysis misses would leave rows
++         * unwritten. Reporting relative for a source the opcode never reads
++         * only costs a full copy, so it is allowed and counted. */
++        CHECK(!saw_relative || u.relative,
++              "program %d: shader reads relatively, analysis did not say so", n);
++        if (u.relative && !saw_relative) over_relative++;
++        if (u.relative) relative++; else if (u.lo <= u.hi) ranged++;
++    }
++
++    /* No end flag: the analysis must refuse to give a range. */
++    for (int i = 0; i < 4; i++) make_instr(uc + i * 16, 0, 0);
++    rsx_vp_const_usage u;
++    CHECK(rsx_vp_analyze_constants(uc, 4 * 16u, &u) < 0 && !u.valid,
++          "unterminated program accepted");
++    /* NULL input. */
++    CHECK(rsx_vp_analyze_constants(NULL, 16, &u) < 0 && !u.valid, "NULL ucode accepted");
++
++    printf("test_vp_const_usage: %d programs decompiled (%d ranged, %d relative, %d of those"
++           " conservatively), %d failure(s)\n", decompiled, ranged, relative, over_relative, fails);
++    if (decompiled < PROGRAMS / 2 || ranged < 1000 || relative < 100) {
++        printf("FAIL: too few programs exercised the check\n");
++        return 1;
++    }
++    return fails ? 1 : 0;
++}

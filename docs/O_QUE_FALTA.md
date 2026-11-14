@@ -16,7 +16,7 @@ Fecha com `Ctrl+C`.
 | Jogadores na câmera de jogo | Funcionam: um amistoso foi jogado até o fim em janela |
 | Data Pack 6 e Option File | Instalados e carregados pelo jogo |
 | Teclado e DualSense (SDL) | Funcionam |
-| Som | Funciona na partida; o início do replay ainda perde alguns blocos |
+| Som | Funciona na partida; o chiado do começo da partida foi corrigido em 14/11 (falta ouvir em janela); o início do replay ainda perde alguns blocos |
 | Partida completa | Funciona: amistoso jogado até o fim em janela |
 | Fechar o jogo | Fechar a janela, Cmd-Q ou SIGTERM encerram o processo (SIGTERM testado; o botão de fechar ainda não visto) |
 | Perfil Brasil 2026 | Séries A e B com 20 clubes, Libertadores e Sul-Americana, uniformes 1 e 2 e 63 rostos HD; visto sem janela e no seletor de times |
@@ -135,8 +135,9 @@ em janela e com teclado: um amistoso jogado até o fim.
 - [x] **Som:** o mixer do jogo roda em tempo real (48 kHz) sem buracos na partida. Resta o pico
       no início do replay (seção 1). A falha `-66681` do CoreAudio era do Mac, não do porte.
       A narração não foi testada.
-- [ ] **Saves:** salvar e carregar não foi validado. A Master League e o Rumo ao
-      Estrelato dependem disso. As opções são gravadas em
+- [x] **Saves da Master League:** criar, salvar e carregar uma ML na América Latina com o perfil
+      2026, visto sem janela em 13/11/2026 (detalhes em `docs/SAVE_BRASIL_40_2026.md`).
+- [ ] **Saves:** o Rumo ao Estrelato e uma temporada inteira da ML ainda não foram testados. As opções são gravadas em
       `rpcs3/dev_hdd0/home/00000001/savedata` e foram lidas de volta em um boot seguinte.
       Saves de jogo ainda não foram testados.
 - [x] **Rede e troféus:** testado sem internet em 11/11/2026: Comunidade Online volta ao menu sem

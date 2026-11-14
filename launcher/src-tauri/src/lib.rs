@@ -1191,7 +1191,7 @@ fn launch_env(s: &Settings, port: &Path, gamedata: &Path, disc: Option<&Path>, i
     if !device.is_empty() && !device.contains(['\n', '\r']) {
         set("PS3_AUDIO_DEVICE", device.to_string());
     }
-    // run.sh's ${AUDIO_ELASTIC:-1}; the runtime reads it with atoi, so 0 is off
+    // run.sh's ${AUDIO_ELASTIC:-16} (about 85 ms); the runtime reads it with atoi, so 0 is off
     if !s.audio_elastic {
         set("AUDIO_ELASTIC", "0".into());
     }

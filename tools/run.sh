@@ -75,10 +75,22 @@ export PS3_VERBOSE=${PS3_VERBOSE:-0}
 # already supports this; point samplers and unmipped UI keep guest filtering.
 # Set PS3_ANISO=0 to restore original filtering, or 8 to reduce GPU cost.
 export PS3_ANISO=${PS3_ANISO:-16}
-# Keep twice the audio queue (about 43 ms) and let the mixer wait for a late block,
-# so a frame that runs long does not become a gap in the sound. AUDIO_ELASTIC=0 is
-# the shorter queue (about 21 ms).
-export AUDIO_ELASTIC=${AUDIO_ELASTIC:-1}
+# Keep about 85 ms of audio queued (16 blocks) and let the mixer wait for a late
+# block, so a frame or a load that runs long does not become a crackle in the
+# sound. Measured over 95 s of title screen and menu in a window: 38 gaps with the
+# old 43 ms (AUDIO_ELASTIC=1), 4 with this. AUDIO_ELASTIC=0 is the short queue
+# (about 21 ms).
+export AUDIO_ELASTIC=${AUDIO_ELASTIC:-16}
+# The game's audio threads (libmixer's _cellsurMixerMain 400, _sys_mixer* 402/404,
+# CRI's cri_adxm_vv_proc 100) at the host's top normal priority: as a match starts
+# they lost the CPU to the loading threads, wrote their blocks late, and the mix
+# had holes (crackle and hiss). Headless match starts with the Mac busy: 49 and 22
+# holes without it, 7 with it, 1 with the shorter late-block wait too. Nothing
+# else in this game runs below 450. PS3_PPU_BOOST_BELOW=-1 turns it off.
+export PS3_PPU_BOOST_BELOW=${PS3_PPU_BOOST_BELOW:-450}
+# The Dock icon: the player's own copy's ICON0.PNG (the PKG's, in game/), not
+# the generic "exec" one a plain executable gets. PS3_WINDOW_ICON=none turns it off.
+[ -f "$PES_ROOT/game/ICON0.PNG" ] && export PS3_WINDOW_ICON=${PS3_WINDOW_ICON:-$PES_ROOT/game/ICON0.PNG}
 export PES_ROOT
 
 exec env "$@" "$PES_BUILD/PES2013Recomp" "$PES_EBOOT"

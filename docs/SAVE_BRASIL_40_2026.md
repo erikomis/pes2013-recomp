@@ -465,3 +465,62 @@ Sagres, Barra-SC no fim de "Outros Times (Europa)".
   Danilo (Botafogo), Nacho Sosa e Isidro Pitta (Bragantino). Não aplicados: os primeiros rostos
   livres são os que falharam acima. O Caio do Grêmio (#38) não foi ligado ao "Caio Paulista": nada
   prova que é ele.
+
+## Master League com o perfil 2026 (13/11/2026)
+
+**O problema.** Criar uma Master League na América Latina com o perfil fechava o jogo
+(`sys_process_exit(1)` depois de um teste do heap no `free`). Com o Option File original, ou com o
+perfil sem o `pes13_competitions.txt`, a ML era criada normalmente.
+
+**A causa.** A ML guarda uma entrada de 16 bytes para cada jogador do seu mundo (clubes das ligas,
+clubes das competições extras como a Libertadores, e seleções). Uma cópia de segurança dessas
+entradas tem lugar para 8000 (`func_0105117C` copia o vetor para ela, sem limite). Com a Libertadores
+do jogo (times fixos, sem elenco no save) o perfil dava 7880 entradas. Com a nossa Libertadores 2026
+(38 clubes do save, com elencos completos) dava 8355: a cópia escrevia 355 entradas além do fim e
+corrompia o heap. O formato do save da ML também é de 8000: mesmo sem a corrupção, um save com mais
+entradas não carrega. Achado por bissecção da lista e medição do vetor (log `PES_ML_LOG=1`).
+
+**A correção.**
+- `port/pes_ml.cpp` substitui as duas cópias (`func_0105117C`, `func_01051214`): param em 8000. É uma
+  proteção (criar a ML não corrompe mais nada); não basta para o save.
+- `tools/fix_national_squads_2026.py`: as seleções usam registros de jogador próprios, separados dos
+  de clube, e 1381 convocados de 2013 não estão em clube nenhum (cada um conta uma entrada). Cada um
+  é trocado, na mesma vaga do elenco, pelo mesmo jogador na versão de clube quando há um só com o
+  mesmo nome e nacionalidade (180: Stekelenburg, Robben, Afellay...), senão por um jogador de clube
+  da mesma nacionalidade e posição (648), das ligas maiores primeiro. 553 ficam (não há jogador de
+  clube daquela nacionalidade). As seleções clássicas e os times da ML não mudam. Relatório:
+  `national_squads_2026.json`; EDIT anterior: `DATA.BIN.before-national`.
+- Resultado: 7731 entradas com a Libertadores 2026 completa. Visto sem janela: criar a ML na América
+  Latina, salvar três vezes (`BLUS31029ML01`), voltar ao menu, carregar e abrir o menu do time.
+
+**Copa do Brasil na ML.** A ML tem a "Copa KIA do Brasil", mata-mata de 32: a Série A inteira e os
+12 primeiros da Série B na ordem da tabela de ligas. A Série B foi reordenada (`leagues_2026.json`,
+`DATA.BIN.before-cup-order`) para os 8 clubes da B do sorteio de 2026 virem primeiro (Athletic-MG,
+Atlético-GO, Ceará, CRB, Fortaleza, Goiás, Juventude, Operário-PR): a copa da ML sai com 28 dos 32
+reais. As outras 4 vagas vão para América-MG, Avaí, Botafogo-SP e Criciúma; Confiança, Paysandu,
+Jacuipense e Barra-SC (fora das Séries A e B) não entram, porque a ML monta a copa pelo código a
+partir das ligas e o ponto de escolha não foi achado. A ordem nova também muda a ordem da Série B
+nos seletores de time.
+
+Ordem para refazer o perfil, depois das etapas anteriores: `add_cup_clubs_2026.py`,
+`set_leagues.py --map leagues_2026.json`, `fix_national_squads_2026.py`.
+
+## Master League jogada: tempo, partidas, Copa KIA, saves (14/11/2026)
+
+Visto sem janela, com o perfil 2026 (uma cópia): ML na América Latina com o Athletic-MG, avançar
+o tempo pelo calendário (pré-temporada e dias de jogo, com as falas da secretária e o relatório
+de contas), partidas no modo treinador até o fim (amistoso contra o PAOK, e os dois jogos da
+1ª fase da Copa KIA do Brasil contra o Corinthians), resultados dos outros jogos da copa e chave
+atualizada, salvar pelo Sistema e o autosave depois de cada jogo (`BLUS31029ML01`), sair e
+carregar de novo.
+
+**Travamento corrigido no runtime.** Em 2 de 4 vezes o jogo parava depois de uma partida (volta
+para a ML) ou antes dela (apresentação), com todas as threads de trabalho do jogo esperando em
+semáforos. O `sys_semaphore` do runtime só somava o contador e acordava uma thread: um `post`
+feito para uma thread que já esperava podia ser tomado por outra que chegasse logo depois, e a
+primeira ficava esperando para sempre. No PS3 o `post` vai para quem já está esperando, em ordem.
+Corrigido em `../ps3recomp-up-r8/runtime/syscalls/sys_semaphore.c` (fila de espera, e também:
+apagar um semáforo com alguém esperando dá EBUSY, e um id apagado não volta logo no próximo
+`create`). Teste novo `test7_semaphore_handoff` em `tests/sync_stress` (falhava antes, passa
+agora; os outros 6 continuam passando). Isso vale para todos os ports que usam esse runtime.
+Depois da correção: os dois jogos da copa sem travar.

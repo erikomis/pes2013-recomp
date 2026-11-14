@@ -36,6 +36,12 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
   `PS3_PPU_BOOST_BELOW=700` (higher priority for the title's audio threads) and
   `AUDIO_ELASTIC=12` (64 ms of queue instead of 43). The A/B run with other games open could
   not decide.
+- [x] Crackle and hiss as a match starts (2026-11-14): the title's audio threads
+  (`_cellsurMixerMain` and CRI's) lost the CPU to the loading threads, and the mixer waited for
+  the late block until the Mac's queue was empty, without sending the event the title needs to
+  write it. `tools/run.sh` now sets `PS3_PPU_BOOST_BELOW=450`, and the wait stops at half the
+  queue. Headless match starts on a busy Mac: 49 and 22 holes in the mix before, 1 and 0 after.
+  Not yet heard in a window.
 - [x] Clicks in the match commentary and crowd (2026-11-08): the mixer sent blocks in bursts
   as CoreAudio freed room, and under match load the title wrote them out of order. Blocks
   now go out on the clock, 5.33 ms apart. Recorded mix of the same match: hundreds of seam
@@ -53,7 +59,10 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 
 ### Game modes
 
-- [ ] Master League and Become a Legend: create, save, load, continue.
+- [x] Master League in Latin America with the 2026 profile: create, save, load (2026-11-13,
+  headless). It closed the game because the 2026 Libertadores pushed the Master League over its
+  8000-player save; national squads now use club players (`tools/fix_national_squads_2026.py`).
+- [ ] Master League: play a season through; Become a Legend: create, save, load.
 - [ ] Saving and loading an edited Option File from inside the game. Done on 2026-11-13,
   headless: Edit > Save writes the whole EDIT (7.9 MB), byte for byte what the tools write, and
   the game reads it back at every start. Not yet: saving after an edit made in the game.

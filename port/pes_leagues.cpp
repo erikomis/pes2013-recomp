@@ -134,11 +134,27 @@ void apply_list(int comp, uint32_t desc)
     }
 }
 
+/* PES_CALLER_LOG=1: each (function, league or competition, caller) once, to find
+ * which code reads a league or competition. */
+void caller_log(const char* fn, int32_t arg, uint32_t lr)
+{
+    static int on = -1;
+    if (on < 0) on = getenv("PES_CALLER_LOG") ? 1 : 0;
+    if (!on) return;
+    static uint64_t seen[1024];
+    static int n;
+    const uint64_t key = ((uint64_t)(uint8_t)fn[0] << 56) ^ ((uint64_t)(uint32_t)arg << 32) ^ lr;
+    for (int i = 0; i < n; i++) if (seen[i] == key) return;
+    if (n < 1024) seen[n++] = key;
+    fprintf(stderr, "[caller] %s %d lr 0x%08X\n", fn, arg, lr);
+}
+
 }  // namespace
 
 /* Team count of a league. r3 = team table, r4 = league; count in r3 and r4. */
 void func_00D4ECA8(ppu_context* ctx)
 {
+    caller_log("count", (int32_t)ctx->gpr[4], (uint32_t)ctx->lr);
     const Range r = league_range((uint32_t)ctx->gpr[3], (int32_t)ctx->gpr[4]);
     ctx->gpr[4] = r.count;
     ctx->gpr[3] = r.count;
@@ -150,6 +166,7 @@ void func_00D4ED6C(ppu_context* ctx)
 {
     const uint32_t table = (uint32_t)ctx->gpr[3];
     const int32_t league = (int32_t)ctx->gpr[4];
+    caller_log("start", league, (uint32_t)ctx->lr);
     const uint32_t at = (league < 0 || league > 9)
         ? 0u : (uint32_t)(table + 2 * league_range(table, league).start);
     ctx->gpr[5] = at;
@@ -168,19 +185,24 @@ void func_00D7D200(ppu_context* ctx)
     const uint32_t base = (uint32_t)ctx->gpr[3];
     const uint32_t out = (uint32_t)ctx->gpr[4];
     const int32_t comp = (int32_t)ctx->gpr[5];
+    caller_log("desc", comp, (uint32_t)ctx->lr);
     const uint32_t desc = (uint32_t)(base + ((uint64_t)(int64_t)comp << 3) + 40);
     apply_list(comp, desc);
     vm_write32(out, vm_read32(desc));
     vm_write32(out + 4, vm_read32(desc + 4));
     /* PES_COMP_LOG=1: each competition asked for, once: its number, the game's
-     * count and its first team IDs. */
+     * count and its first team IDs. PES_COMP_LOG=<n> above 1: every call for
+     * competition n, with the caller and the whole list. */
     { static int on = -1; static uint64_t seen;
-      if (on < 0) on = getenv("PES_COMP_LOG") ? 1 : 0;
-      if (on && comp >= 0 && comp < 64 && !(seen & (1ull << comp))) {
+      if (on < 0) { const char* e = getenv("PES_COMP_LOG"); on = e ? atoi(e) : 0; if (e && on == 0) on = 1; }
+      const int every = on > 1 && comp == on;
+      if (on && comp >= 0 && comp < 64 && (every || !(seen & (1ull << comp)))) {
           seen |= 1ull << comp;
           const uint32_t n = vm_read32(desc), list = vm_read32(desc + 4);
-          fprintf(stderr, "[comp] %d: %u teams at 0x%08X:", comp, n, list);
-          for (uint32_t i = 0; list && i < n && i < 8; i++) fprintf(stderr, " %u", vm_read16(list + 2 * i));
+          fprintf(stderr, "[comp] %d: %u teams at 0x%08X", comp, n, list);
+          if (every) fprintf(stderr, " (lr 0x%08X)", (uint32_t)ctx->lr);
+          fprintf(stderr, ":");
+          for (uint32_t i = 0; list && i < n && i < (every ? 64u : 8u); i++) fprintf(stderr, " %u", vm_read16(list + 2 * i));
           fprintf(stderr, "\n");
       } }
     if (!vm_read32(out)) return;

@@ -36,6 +36,12 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
   `PS3_PPU_BOOST_BELOW=700` (prioridade maior para as threads de áudio do jogo) e
   `AUDIO_ELASTIC=12` (64 ms de fila em vez de 43). O A/B feito com outros jogos abertos não
   serviu para decidir.
+- [x] Estalos e chiado no começo das partidas (14/11/2026): os threads de áudio do jogo
+  (`_cellsurMixerMain` e os da CRI) perdiam a CPU para os de carregamento, e o mixer esperava o
+  bloco atrasado até esvaziar a fila do Mac sem mandar ao jogo o aviso de que ele precisa para
+  escrevê-lo. Agora `PS3_PPU_BOOST_BELOW=450` vem ligado no `tools/run.sh` e a espera para na
+  metade da fila. Início de partida sem janela, Mac ocupado: 49 e 22 buracos na mixagem antes,
+  1 e 0 depois. Falta ouvir em janela.
 - [x] Estalos na narração e na torcida durante a partida (08/11/2026): o mixer mandava blocos
   em rajadas conforme o CoreAudio liberava espaço, e com a partida pesando o jogo os escrevia
   fora de ordem. Agora cada bloco sai pelo relógio, a cada 5,33 ms. Gravação da mesma partida:
@@ -53,7 +59,10 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 
 ### Modos de jogo
 
-- [ ] Master League e Rumo ao Estrelato: criar, salvar, carregar, continuar.
+- [x] Master League na América Latina com o perfil 2026: criar, salvar, carregar (13/11/2026,
+  sem janela). Fechava o jogo porque a Libertadores 2026 passava do limite de 8000 jogadores do
+  save da ML; as seleções agora usam jogadores de clube (`tools/fix_national_squads_2026.py`).
+- [ ] Master League: jogar uma temporada inteira; Rumo ao Estrelato: criar, salvar, carregar.
 - [ ] Salvar e carregar um Option File editado dentro do jogo. Feito em 13/11/2026, sem janela:
   Editar > Salvar grava o EDIT inteiro (7,9 MB), idêntico byte a byte ao que as ferramentas
   geram, e o jogo o lê de volta a cada abertura. Falta salvar depois de uma edição feita no jogo.

@@ -182,16 +182,18 @@ add_executable(${PROJECT_NAME}
     main.cpp
     stubs.cpp
     pes_leagues.cpp
+    pes_ml.cpp
+    pes_memsnap.cpp
     ${PS3RECOMP_SCAFFOLD}
     ${HLE_NID_TABLE}
     ${RECOMP_SOURCES}
     ${SPU_SOURCES}
 )
 
-# pes_leagues.cpp replaces lifted functions (port/lifted_overrides.txt) and reads
+# pes_leagues.cpp and pes_ml.cpp replace lifted functions (port/lifted_overrides.txt) and reads
 # ppu_recomp.h for the context and the guest-memory helpers. Scoped to that file
 # so the lifted TUs' compile commands do not change.
-set_source_files_properties(pes_leagues.cpp PROPERTIES
+set_source_files_properties(pes_leagues.cpp pes_ml.cpp PROPERTIES
     INCLUDE_DIRECTORIES "${RECOMP_DIR}"
     COMPILE_OPTIONS "-O2")
 
