@@ -10,7 +10,8 @@ The layout is the repository's:
     port/BUILD_INFO.json         commit the sources come from (no git there)
     port/LICENSE, CREDITS*.md
     port/port/                   CMakeLists.txt, config.toml, main.cpp, stubs.cpp,
-                                 pes_leagues.cpp, lifted_overrides.txt
+                                 pes_leagues.cpp, pes_ml.cpp, pes_memsnap.cpp,
+                                 lifted_overrides.txt
     port/patches/                the ps3recomp toolkit patch setup_toolkit.sh applies
     port/tools/                  the scripts the install and Play run (TOOLS below)
 
@@ -39,7 +40,8 @@ TOOLS = [
 ]
 WANT = (['LICENSE', 'CREDITS.md', 'CREDITS.pt-BR.md',
          'port/CMakeLists.txt', 'port/config.toml', 'port/main.cpp', 'port/stubs.cpp',
-         'port/pes_leagues.cpp', 'port/lifted_overrides.txt',
+         'port/pes_leagues.cpp', 'port/pes_ml.cpp', 'port/pes_memsnap.cpp',
+         'port/lifted_overrides.txt',
          'patches/ps3recomp-675ed39-pes13.patch']
         + ['tools/' + t for t in TOOLS])
 
