@@ -6681,7 +6681,7 @@ index 79f3cc66..edabcf8c 100644
          return 1;
      }
 diff --git a/runtime/ppu/ppu_fs.cpp b/runtime/ppu/ppu_fs.cpp
-index ec959f88..9e6f6ed9 100644
+index ec959f88..2c094957 100644
 --- a/runtime/ppu/ppu_fs.cpp
 +++ b/runtime/ppu/ppu_fs.cpp
 @@ -13,6 +13,7 @@
@@ -6696,7 +6696,7 @@ index ec959f88..9e6f6ed9 100644
      p[len - 1] = p[len - 1];
  }
  
-+/* FS_IO_LOG=<substring>: every read and write on a file whose path contains it, with
++/* FS_IO_LOG=<substring>: every read (R; A for an AIO read) and write on a file whose path contains it, with
 + * how many of the bytes are not zero: is a scratch file read back as written? */
 +static void fs_io_log(char op, int fd, long pos, uint64_t want, size_t got, uint32_t buf, ppu_context* ctx)
 +{
@@ -6730,6 +6730,14 @@ index ec959f88..9e6f6ed9 100644
      /* DIAGNOSTIC (PS3_FSLOG_BT=1): dump the guest back-chain when the game logs the
       * render-config failure, to locate setScreenRenderTargetInternal & the config obj. */
      if (getenv("PS3_FSLOG_BT") && buf && nbytes > 0 && nbytes < 4096 && vm_base) {
+@@ -935,6 +952,7 @@ static void cellFsAioRead(ppu_context* ctx)
+         HOST_UNLOCKFILE(f);
+         err = CELL_OK;
+     }
++    if (err == CELL_OK) fs_io_log('A', fd, (long)offset, size, n, buf, ctx);
+     if (getenv("PS3_FSLOG"))
+         fprintf(stderr, "[fs] aio read id=%d fd=%d off=%llu size=%llu -> %zu\n",
+                 id, fd, (unsigned long long)offset, (unsigned long long)size, n);
 diff --git a/runtime/ppu/ppu_loader.cpp b/runtime/ppu/ppu_loader.cpp
 index 70bb3a44..24491664 100644
 --- a/runtime/ppu/ppu_loader.cpp

@@ -80,6 +80,9 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 ### Controles
 
 - [x] Teclado (Enter = START, Espaço = CROSS) e DualSense pelo SDL.
+- [x] DualSense na partida (14/11/2026): gol (luz, três pulsos, som no alto-falante pelo USB) e
+  apito do intervalo e do fim, lidos do placar e do relógio do jogo. Visto sem janela: dois gols
+  e o intervalo detectados na hora certa. Falta: a luz na cor do time do jogador.
 - [ ] Mapear todo o esquema de controle do PES no launcher e testar em janela.
 - [ ] Teclado virtual: com janela, quando o jogo pede um texto (o nome do perfil, de um jogador),
   abre uma caixa do macOS com o texto inicial preenchido, e o que for digitado volta ao jogo, com

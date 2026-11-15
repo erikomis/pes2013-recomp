@@ -80,6 +80,9 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 ### Controls
 
 - [x] Keyboard (Enter = START, Space = CROSS) and DualSense through SDL.
+- [x] DualSense in the match (2026-11-14): goal (light, three pulses, sound through the speaker
+  over USB) and the half-time and full-time whistle, read from the game's score and clock. Seen
+  headless: two goals and half time detected on time. Missing: the light in the player's team colour.
 - [ ] Map the full PES control scheme in the launcher and test it in a window.
 - [ ] Virtual keyboard: with a window, when the game asks for text (the profile's name, a
   player's), a macOS alert opens with the initial text filled in, and what is typed goes back to

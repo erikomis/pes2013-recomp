@@ -184,6 +184,7 @@ add_executable(${PROJECT_NAME}
     pes_leagues.cpp
     pes_ml.cpp
     pes_memsnap.cpp
+    pes_events.cpp
     ${PS3RECOMP_SCAFFOLD}
     ${HLE_NID_TABLE}
     ${RECOMP_SOURCES}

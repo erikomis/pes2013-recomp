@@ -524,3 +524,14 @@ apagar um semáforo com alguém esperando dá EBUSY, e um id apagado não volta 
 `create`). Teste novo `test7_semaphore_handoff` em `tests/sync_stress` (falhava antes, passa
 agora; os outros 6 continuam passando). Isso vale para todos os ports que usam esse runtime.
 Depois da correção: os dois jogos da copa sem travar.
+
+## Narração com os nomes de 2026, conferida no jogo (14/11/2026)
+
+`tools/fix_callnames_2026.py` aponta o campo de narração (+114) de cada jogador renomeado para uma
+gravação do nome dele, do sobrenome ou do primeiro nome; sem gravação, o narrador não diz nome
+(876 com nome, 1491 sem). Para conferir no jogo, sem ouvir: cada gravação de nome em
+`dt00_b.img` se chama `B_VP_P0_R<id>`, e `FS_IO_LOG=dt00_b` (o runtime agora registra também as
+leituras assíncronas) mostra quais o jogo lê. Num Flamengo x Santos de 10 minutos ele leu duas:
+R35204 e R40645, que são as que o save dá a Alex Sandro ("Alecsandro") e Léo Ortiz ("Ortíz"),
+ambos do Flamengo 2026. Conferência: `tools/check_narration_reads.py <boot.log> <DATA.BIN do EEDIT> <inventory.json> "CR FLAMENGO" "SANTOS FC"`, com o catálogo em
+`analysis/narration-2026/current-ptbr/inventory.json`.

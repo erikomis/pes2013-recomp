@@ -119,6 +119,12 @@ jogo em `rpcs3/` e abre o jogo. Passe ajustes como `VAR=valor` depois dele.
 Teclado: Enter é START, Espaço é CROSS. DualSense, DualShock 4 ou controle de Xbox
 funcionam pelo SDL.
 
+O DualSense também reage à partida (`port/pes_events.cpp` lê o placar e o relógio do jogo): no
+gol a barra de luz pisca, o controle vibra em três pulsos e, pelo USB, o gol sai no alto-falante
+dele; no intervalo e no fim do jogo, uma vibração longa. Feche a Steam antes: o Steam Input toma
+a luz e o alto-falante. `PES_EVENTS=0` desliga, `PS3_PAD_SPEAKER=0` deixa o alto-falante mudo,
+`PS3_PAD_LIGHT=#rrggbb` escolhe a cor da luz (`off` apaga).
+
 ## Perfil temporada 2026
 
 Um perfil de teste (uma cópia; os saves do dono não são tocados), montado com os

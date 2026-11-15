@@ -118,6 +118,13 @@ tools/run.sh > cache/boot-meu.log 2>&1
 Keyboard: Enter is START, Space is CROSS. A DualSense, DualShock 4 or Xbox
 controller works through SDL.
 
+A DualSense also reacts to the match (`port/pes_events.cpp` reads the score and the clock
+from the game): on a goal the light bar flashes, the controller vibrates in three pulses
+and, over USB, the goal is heard through its speaker; at half time and full time a long
+vibration. Close Steam first: Steam Input takes the light bar and the speaker.
+`PES_EVENTS=0` turns it off, `PS3_PAD_SPEAKER=0` keeps the speaker quiet,
+`PS3_PAD_LIGHT=#rrggbb` sets the light bar's colour (`off` turns it off).
+
 ## Season 2026 profile
 
 A test profile (a copy; the owner's saves are not touched) built with the
