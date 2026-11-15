@@ -1473,7 +1473,7 @@ index 30290c73..8832bbec 100644
  s32 sys_prx_get_module_id_by_name(const char* name, u64 flags, u32* id);
  
 diff --git a/libs/video/cellGcmSys.c b/libs/video/cellGcmSys.c
-index dbeb58fa..3c474d01 100644
+index dbeb58fa..5556585d 100644
 --- a/libs/video/cellGcmSys.c
 +++ b/libs/video/cellGcmSys.c
 @@ -12,6 +12,7 @@
@@ -1759,7 +1759,45 @@ index dbeb58fa..3c474d01 100644
          if (begin && end > begin && cur >= begin && cur + GCM_RECYCLE_SLACK >= end
                  && head_consumed && s_title_overran) {
              u32 io_begin = gcm_ea2io(begin);
-@@ -2981,7 +3036,7 @@ s32 cellGcmSetPrepareFlip(void* ctx, u32 bufferId)
+@@ -2692,6 +2747,37 @@ void cellGcm_fifo_recycle(u32 ctx_ea)
+      * consumes the tail, follows the jump, and idles at begin; then it's safe
+      * for the guest to write from begin (that region was consumed long ago). */
+     u32 io_begin = gcm_ea2io(begin);
++    /* Flush first, as libgcm's own callback does: what the title wrote since its
++     * last flush (put .. current) must reach the walker before put moves to begin.
++     * A title that writes a whole lap of the ring without flushing leaves put at
++     * begin and the walker idle there with get == put, so the JUMP below is never
++     * read: the full ring looks empty, the wait below runs out, and the title
++     * writes over a lap of commands the RSX never ran, its flips among them, and
++     * then waits for a flip for ever (PES 2013, a match frozen as a replay
++     * started: "drain stalled (drained=begin)"). GCM_RECYCLE_FLUSH=0 leaves it out. */
++    {
++        static int s_flush = -1;
++        if (s_flush < 0) { const char* e = getenv("GCM_RECYCLE_FLUSH"); s_flush = !(e && e[0] == '0'); }
++        const u32 io_cur = gcm_ea2io(current);
++        const u32 put0 = vm_read32(GCM_CONTROL_GUEST_ADDR + 0);
++        if (s_flush && io_begin != 0xFFFFFFFFu && io_cur != 0xFFFFFFFFu && put0 != io_cur) {
++            const u32 get0 = s_fifo_getoff;
++            s_fifo_recycle_waiting = 1;
++            atomic_thread_fence(memory_order_release);
++            vm_write32(GCM_CONTROL_GUEST_ADDR + 0, io_cur);      /* put = current */
++            int fspins = 0, fidle = 0;
++            u32 flast = s_fifo_getoff;
++            while (s_fifo_getoff != io_cur && fidle < 2000 && fspins < 60000) {
++                Sleep(1); fspins++;
++                if (s_fifo_getoff != flast) { flast = s_fifo_getoff; fidle = 0; }
++                else fidle++;
++            }
++            static int fl = 0;
++            if (s_recdbg || PS3_LOG_FIRST(fl, 8))
++                fprintf(stderr, "[cellGcmSys] fifo recycle: flushed put 0x%08X -> 0x%08X first"
++                        " (get 0x%08X -> 0x%08X, %d ms)%c", put0, io_cur, get0, s_fifo_getoff, fspins, 10);
++        }
++    }
+     const u32 back_jumps0 = s_fifo_back_jumps;
+     if (io_begin != 0xFFFFFFFFu) {
+         vm_write32(current, 0x20000000u | io_begin);            /* JUMP begin  */
+@@ -2981,7 +3067,7 @@ s32 cellGcmSetPrepareFlip(void* ctx, u32 bufferId)
      if (!s_display_buffer_set[bufferId])
          return CELL_GCM_ERROR_INVALID_VALUE;
  
@@ -1768,7 +1806,7 @@ index dbeb58fa..3c474d01 100644
  
      /* GCM_PREPAREFLIP_FIFO=1: do what the firmware does -- append the flip
       * (GCM_FLIP_COMMAND, id) to the command buffer the title passed and return
-@@ -4019,7 +4074,7 @@ u32 cellGcmGetDefaultSegmentWordSize(void)
+@@ -4019,7 +4105,7 @@ u32 cellGcmGetDefaultSegmentWordSize(void)
  /* Immediate flip — perform flip right now */
  s32 cellGcmSetFlipImmediate(u32 bufferId)
  {
@@ -6937,7 +6975,7 @@ index 1a393fde..4cc8af91 100644
      ps3_hle_register_ctx(0xFDB8F926u, "netFreethreadContext",   hle_net_zero);
      /* Route the GCM command-buffer-full callback (invoked indirectly via the
 diff --git a/runtime/spu/spu_channels.c b/runtime/spu/spu_channels.c
-index 705ecc83..2b0e2525 100644
+index 705ecc83..dd4e04b7 100644
 --- a/runtime/spu/spu_channels.c
 +++ b/runtime/spu/spu_channels.c
 @@ -138,6 +138,14 @@ void spu_restart_dispatch(spu_context* ctx)
@@ -6955,7 +6993,7 @@ index 705ecc83..2b0e2525 100644
  
  /* Every MFC PUT an SPU completes, if anyone is listening. Installed by the GCM
   * layer (libs/video/cellGcmSys.c), which needs it to find the RSX pushbuffer:
-@@ -202,6 +210,18 @@ void spu_stop(spu_context* ctx)
+@@ -202,8 +210,26 @@ void spu_stop(spu_context* ctx)
       * A/B experiments (it makes the kernel terminate, which the game restarts). */
      static int s_halt = -1;
      if (s_halt < 0) s_halt = getenv("YDKJ_STOP_HALT") ? 1 : 0;
@@ -6972,9 +7010,18 @@ index 705ecc83..2b0e2525 100644
 +    }
 +
      ctx->status = SPU_STATUS_STOPPED_BY_STOP;
-     if (s_halt) spu_halt(ctx);
+-    if (s_halt) spu_halt(ctx);
++    /* THREAD_EXIT and GROUP_EXIT never resume the guest. Unwind every lifted
++     * caller, not just the function containing the stop: a nested CRT exit
++     * otherwise returns into its caller's finalizer loop forever, and lv2's
++     * group_join can never observe completion. Receive-event above and other
++     * resumable stop-and-signal protocols keep their existing behavior. */
++    if (ctx->stop_code == 0x101u || ctx->stop_code == 0x102u || s_halt)
++        spu_halt(ctx);
  }
-@@ -648,6 +668,24 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
+ 
+ /* Run a lifted SPU entry with a halt landing pad. Returns 1 if the job halted
+@@ -648,6 +674,24 @@ static int spu_mfc_atomic(spu_context* ctx, uint32_t cmd)
                        m[0],m[1],m[2],m[3], m[4],m[5],m[6],m[7], m[8],m[9],m[10],m[11], m[12],m[13],m[14],m[15]);
            } }
          spu_lockline_unlock();
@@ -6999,7 +7046,7 @@ index 705ecc83..2b0e2525 100644
          /* SPU_LLARWATCH=<hex EA>: every GETLLAR of that line, with the LSA it
           * used and the first word as it lands in BOTH places.
           *
-@@ -849,6 +887,18 @@ static int channel_is_mfc(uint32_t ch)
+@@ -849,6 +893,18 @@ static int channel_is_mfc(uint32_t ch)
   * ===========================================================================*/
  void spu_wrch(spu_context* ctx, uint32_t channel, u128 value)
  {
@@ -7018,7 +7065,7 @@ index 705ecc83..2b0e2525 100644
      /* SPU_CHHIST=1: which channels a job actually touches, and how often. A
       * worker that never issues an MFC command is either not being handed its
       * work descriptor or is waiting on a channel we never satisfy; the channel
-@@ -884,6 +934,11 @@ void spu_wrch(spu_context* ctx, uint32_t channel, u128 value)
+@@ -884,6 +940,11 @@ void spu_wrch(spu_context* ctx, uint32_t channel, u128 value)
  
      switch (channel) {
      case SPU_WrOutMbox:
@@ -7030,7 +7077,7 @@ index 705ecc83..2b0e2525 100644
          /* A raw SPU's outbound mailbox is one entry deep and wrch stalls while
           * it is full. Buffering instead let two replies queue up, and a PPU
           * that tests bit 0 of the count -- Tornado Outbreak's boot handshake,
-@@ -1081,6 +1136,16 @@ static void spu_ch_wait(spu_context* ctx, uint32_t channel, const char* op)
+@@ -1081,6 +1142,16 @@ static void spu_ch_wait(spu_context* ctx, uint32_t channel, const char* op)
   * ===========================================================================*/
  u128 spu_rdch(spu_context* ctx, uint32_t channel)
  {
@@ -7047,7 +7094,7 @@ index 705ecc83..2b0e2525 100644
      { static int s_c = -1; if (s_c < 0) { const char* e = getenv("SPU_CHHIST"); s_c = e ? (atoi(e) > 0 ? atoi(e) : 2000) : 0; }
        if (s_c) { static unsigned long long r[128]; static unsigned long long n;
            r[channel & 127]++;
-@@ -1866,6 +1931,9 @@ static void spu_ef_deliver_owed(spu_context* ctx, uint32_t wobj)
+@@ -1866,6 +1937,9 @@ static void spu_ef_deliver_owed(spu_context* ctx, uint32_t wobj)
   * Canonical layout (RPCS3 cellSync.h): h4 reserved-pop u16 @+0x06, h5
   * completed-push u16 @+0x08, size @+0x10, depth @+0x14. From the Resistance 2
   * tree; SPURS_LFQ_NOWAKE=1 disables. */
@@ -7057,7 +7104,7 @@ index 705ecc83..2b0e2525 100644
  static int spu_lfq_wait_satisfied(uint32_t wobj)
  {
      static int s_lfw = -1;
-@@ -2006,8 +2074,19 @@ void spu_spurs_taskset_syscall(spu_context* ctx)   /* non-static: also called by
+@@ -2006,8 +2080,19 @@ void spu_spurs_taskset_syscall(spu_context* ctx)   /* non-static: also called by
              extern void spu_taskset_parked_add(uint32_t, uint32_t, uint32_t);
              extern void spu_taskset_parked_del(uint32_t, uint32_t);
              extern int spu_taskset_consume_wake(uint32_t);
@@ -7078,7 +7125,7 @@ index 705ecc83..2b0e2525 100644
                  spu_ef_deliver_owed(ctx, wobj);
                  ctx->gpr[3]._u32[0] = 0;
                  return;
-@@ -2018,7 +2097,9 @@ void spu_spurs_taskset_syscall(spu_context* ctx)   /* non-static: also called by
+@@ -2018,7 +2103,9 @@ void spu_spurs_taskset_syscall(spu_context* ctx)   /* non-static: also called by
               * found nobody to wake. The pusher stores push_h5 then scans the
               * parked list; with a full fence on both sides one sees the other. */
              __atomic_thread_fence(__ATOMIC_SEQ_CST);
@@ -7089,7 +7136,7 @@ index 705ecc83..2b0e2525 100644
                  spu_taskset_parked_del(ts, tid);
                  yz_lockstep_block_end(ctx);
                  spu_ef_deliver_owed(ctx, wobj);
-@@ -2028,6 +2109,8 @@ void spu_spurs_taskset_syscall(spu_context* ctx)   /* non-static: also called by
+@@ -2028,6 +2115,8 @@ void spu_spurs_taskset_syscall(spu_context* ctx)   /* non-static: also called by
              spu_taskset_wait_signal(ts, tid);
              spu_taskset_parked_del(ts, tid);
              yz_lockstep_block_end(ctx);
@@ -7379,6 +7426,103 @@ index bb8f1226..c7b31dc5 100644
  
      /* Capture the job's outbound mailbox. These are LS POINTERS TO STRINGS for
       * the SPU printf service, NOT query results -- value 0x83C0 from the sound
+diff --git a/runtime/spu/tests/test_spu_lifted_start.c b/runtime/spu/tests/test_spu_lifted_start.c
+index 7f5ef56f..984545ee 100644
+--- a/runtime/spu/tests/test_spu_lifted_start.c
++++ b/runtime/spu/tests/test_spu_lifted_start.c
+@@ -385,6 +385,14 @@ static void test_resident_code_regions(void)
+ {
+     spu_context* ctx = (spu_context*)calloc(1, sizeof *ctx);
+     if (!ctx) { check(0, "allocate streamed code context"); return; }
++    /* Resident dispatch compares the instruction against its source image.
++     * These synthetic EAs must therefore name real fixture memory too. */
++    uint8_t* old_vm = vm_base;
++    const uint32_t old_size = ppu_vm_size;
++    uint8_t* sources = (uint8_t*)calloc(1, 0x700100);
++    if (!sources) { check(0, "allocate streamed image sources"); free(ctx); return; }
++    vm_base = sources;
++    ppu_vm_size = 0x700100;
+     spu_context_init(ctx, 0);
+     const uint32_t a = 0x11000, b = 0x12000;
+     spu_begin_image(81); spu_register_function(a, code_a);
+@@ -402,12 +410,17 @@ static void test_resident_code_regions(void)
+     check(ctx->gpr[3]._u32[0] == 81, "first streamed job survives second job and continuation DMA");
+     ctx->pc = b; spu_indirect_branch(ctx);
+     check(ctx->gpr[3]._u32[0] == 82, "second streamed job overrides stale base-image code");
++    memset(sources + 0x700000, 0x5A, 0x100);
++    memcpy(ctx->ls + a, sources + 0x700000, 0x100);
+     spu_overlay_note_get(ctx, 0x700000, ctx->ls + a, 0x100);
+     ctx->pc = a; spu_indirect_branch(ctx);
+     check(ctx->gpr[3]._u32[0] != 81, "overwriting a code buffer invalidates its old image");
+     ctx->pc = b; spu_indirect_branch(ctx);
+     check(ctx->gpr[3]._u32[0] == 82, "overwriting one buffer preserves the other");
+     g_spu_trampoline_fn = 0;
++    vm_base = old_vm;
++    ppu_vm_size = old_size;
++    free(sources);
+     free(ctx);
+ }
+ 
+@@ -758,12 +771,59 @@ static void test_nonzero_link_return(void)
+     free(ctx);
+ }
+ 
++/* An exit may be several lifted C frames below the dispatcher. Returning
++ * one frame resumes obsolete CRT callers (PES's copy workers loop in their
++ * finalizers), so the stop must unwind to the driver's landing pad. */
++static int exit_continued;
++static uint32_t exit_test_code;
++extern int (*g_spu_receive_event_hook)(spu_context*);
++static int exit_test_receive(spu_context* ctx) { (void)ctx; return 1; }
++static void exit_test_leaf(spu_context* ctx)
++{
++    ctx->stop_code = exit_test_code;
++    ctx->status = SPU_STATUS_STOPPED_BY_STOP;
++    spu_stop(ctx);
++    exit_continued = 1;
++}
++static void exit_test_caller(spu_context* ctx)
++{
++    exit_test_leaf(ctx);
++    exit_continued = 2;
++}
++static void test_nested_exit_stop(void)
++{
++    spu_context* ctx = (spu_context*)calloc(1, sizeof(*ctx));
++    CHECK(ctx != NULL);
++    if (!ctx) return;
++    int (*old_receive)(spu_context*) = g_spu_receive_event_hook;
++    g_spu_receive_event_hook = exit_test_receive;
++    const uint32_t codes[] = {0x101u, 0x102u, 0x110u};
++    for (unsigned i = 0; i < sizeof(codes) / sizeof(codes[0]); ++i) {
++        memset(ctx, 0, sizeof(*ctx));
++        ctx->image_id = -1;
++        exit_test_code = codes[i];
++        exit_continued = 0;
++        const int halted = spu_run_with_halt(exit_test_caller, ctx);
++        if (codes[i] == 0x110u) {
++            CHECK(!halted && exit_continued == 2);
++            CHECK(ctx->status == SPU_STATUS_RUNNING);
++        } else {
++            CHECK(halted && exit_continued == 0);
++            CHECK(ctx->status == SPU_STATUS_STOPPED_BY_STOP);
++            CHECK(ctx->stop_code == codes[i]);
++        }
++    }
++    g_spu_receive_event_hook = old_receive;
++    free(ctx);
++}
++
+ int main(void)
+ {
+     printf("SPU lifted thread-group start\n");
+ 
+     /* Runtime-generated branch hints, before the registry has anything in it
+      * so the micro-interpreter path is the one that runs. */
++    test_nested_exit_stop();
+     test_smc_branch_hints();
+     test_smc_xori();
+     test_resident_code_regions();
 diff --git a/runtime/syscalls/lv2_register.c b/runtime/syscalls/lv2_register.c
 index 8815650c..cdcb89fc 100644
 --- a/runtime/syscalls/lv2_register.c
@@ -7765,7 +7909,7 @@ index c64b0b8d..4c4ee6a6 100644
          t->state = PPU_THREAD_STATE_FREE;
          pthread_mutex_destroy(&t->finish_mutex);
 diff --git a/runtime/syscalls/sys_semaphore.c b/runtime/syscalls/sys_semaphore.c
-index a05eeecf..ddb0d09d 100644
+index a05eeecf..0fbc7b72 100644
 --- a/runtime/syscalls/sys_semaphore.c
 +++ b/runtime/syscalls/sys_semaphore.c
 @@ -226,20 +226,42 @@ int64_t sys_semaphore_create(ppu_context* ctx)
@@ -7949,10 +8093,10 @@ index a05eeecf..ddb0d09d 100644
 +            if (rc == ETIMEDOUT && !me.granted && !reported) {
 +                reported = 1;
 +                fprintf(stderr, "[semstall] sem=%u tid=%llu blocked >%ds"
-+                                " value=%d max=%d waiters=%d lr=0x%08X%c",
++                                " value=%d max=%d waiters=%d lr=0x%08X owner=%u owner_lr=0x%08X%c",
 +                        sem_id, (unsigned long long)ctx->thread_id, stall_s,
 +                        s->value, s->max_value, s->waiters,
-+                        (unsigned)ctx->lr, 10);
++                        (unsigned)ctx->lr, s->owner_tid, s->owner_lr, 10);
 +                /* One full snapshot of the table, so the counters of the
 +                 * other threads are visible next to the blocked one. */
 +                static int once = 0;

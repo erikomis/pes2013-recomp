@@ -525,6 +525,29 @@ apagar um semáforo com alguém esperando dá EBUSY, e um id apagado não volta 
 agora; os outros 6 continuam passando). Isso vale para todos os ports que usam esse runtime.
 Depois da correção: os dois jogos da copa sem travar.
 
+**Rechecagem de 15/11/2026: o travamento ainda não está encerrado.** O teste posterior
+`ms1` (iniciado em 14/11 às 23:38, amostra de threads em 15/11 às 00:09) voltou a parar
+no escritório da ML. A última captura foi o frame 80460. A correção dos semáforos
+resolveu uma causa demonstrada pelo teste de handoff, mas os dois jogos anteriores
+sem travar não provam que todas as causas foram eliminadas.
+
+Na amostra `ms1-hang.sample`, a thread principal está em
+`func_00DBD6C0 -> func_00DA9E64 -> func_00E010B0 -> sys_semaphore_wait`.
+O código de `func_00DA9E64` espera a conclusão de uma cópia enfileirada por
+`func_00DA9BC0` (retorno da espera: `0x00DA9F28`), antes de devolver o descritor
+à lista livre. O gerenciador dessas cópias está em `0x01BF2E00`. É um ponto concreto
+para a próxima captura de memória: conferir a fila e o semáforo do descritor
+aguardado. A amostra sozinha não demonstra se faltou executar a cópia ou entregar
+sua conclusão; não aplicar um `post` forçado como correção.
+
+O teste seguinte, `ms2`, é um caso diferente: `season.log` registrou às 00:20:48
+uma tela desconhecida, e `season-stuck-00090.png` mostra a escalação do Corinthians
+com a opção **Voltar** (círculo). Isso não comprova travamento do jogo. O script
+`analysis/visual-2026/nav/ml_season.py` agora reconhece essa tela e pressiona círculo.
+Reconhecimento conferido na imagem problemática e em três outras capturas; a
+navegação corrigida ainda precisa ser validada numa nova execução. Nenhuma partida
+nova foi iniciada nesta rechecagem e nenhum save foi alterado.
+
 ## Narração com os nomes de 2026, conferida no jogo (14/11/2026)
 
 `tools/fix_callnames_2026.py` aponta o campo de narração (+114) de cada jogador renomeado para uma
@@ -535,3 +558,23 @@ leituras assíncronas) mostra quais o jogo lê. Num Flamengo x Santos de 10 minu
 R35204 e R40645, que são as que o save dá a Alex Sandro ("Alecsandro") e Léo Ortiz ("Ortíz"),
 ambos do Flamengo 2026. Conferência: `tools/check_narration_reads.py <boot.log> <DATA.BIN do EEDIT> <inventory.json> "CR FLAMENGO" "SANTOS FC"`, com o catálogo em
 `analysis/narration-2026/current-ptbr/inventory.json`.
+
+## Modos validados e travamentos (15/11/2026)
+
+Sem janela, com o perfil 2026 (cópias):
+- **Rumo ao Estrelato:** carreira nova na América Latina (jogador criado com o nome do teclado
+  virtual, assinou com o Avaí, coletiva com a camisa de 2026), salva em `BLUS31029BL01` e
+  carregada de novo numa execução nova, voltando à mesma cena.
+- **Libertadores (modo Competição):** a do menu "Copa Santander Libertadores" usa a lista de 2026
+  (Flamengo com o elenco de 2026; repescagem com Botafogo, Platense, Independiente Rivadavia,
+  Barcelona SC, Junior). A "(UPDATED)", do Data Pack, tem a lista de 2013 e não é trocada.
+  Criada e salva (`BLUS31029LB01`), carregada de novo. A primeira partida congelou logo depois de
+  um gol, na transição do replay (ver abaixo); na segunda tentativa o jogo parou no cartão de
+  apresentação, antes de carregar a partida (o travamento em "Carregando", ainda sem causa).
+- **Master League:** com a correção do Codex nas paradas de SPU, uma partida da Copa KIA foi até o
+  fim, o autosave gravou e a volta ao menu não travou. A temporada inteira não foi jogada: o
+  roteiro automático (`analysis/visual-2026/nav/ml_season.py`) ainda se perde nos menus.
+- **Partida congelada no início do replay:** o anel de comandos do RSX era reciclado sem
+  descarregar antes, e uma volta inteira de comandos (com os flips) se perdia. Corrigido no
+  runtime (`cellGcm_fifo_recycle` descarrega primeiro); falta ver várias partidas seguidas sem
+  congelar. Amostras e logs em `analysis/hangs-2026-11-15/`.
