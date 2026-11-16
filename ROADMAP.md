@@ -62,7 +62,10 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 - [x] Master League in Latin America with the 2026 profile: create, save, load (2026-11-13,
   headless). It closed the game because the 2026 Libertadores pushed the Master League over its
   8000-player save; national squads now use club players (`tools/fix_national_squads_2026.py`).
-- [ ] Master League: play a season through; Become a Legend: create, save, load.
+- [x] Become a Legend: create, save, load (2026-11-15, headless).
+- [x] Master League: matches to full time and back to the menu without hanging (2026-11-15: a
+  destroyed semaphore made the game wait on another thread's one; 3 of 3 after the fix).
+- [ ] Master League: play a whole season.
 - [ ] Saving and loading an edited Option File from inside the game. Done on 2026-11-13,
   headless: Edit > Save writes the whole EDIT (7.9 MB), byte for byte what the tools write, and
   the game reads it back at every start. Not yet: saving after an edit made in the game.
@@ -157,7 +160,7 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 - [ ] New 3D stadiums (Bombonera, Allianz Parque...): would need converting a
   whole stadium model; the game has only Maracanã, Morumbi, Vila Belmiro and
   the Monumental.
-- [ ] A match, Master League and a Libertadores played through with the profile.
+- [x] A match, Master League and a Libertadores played through with the profile (2026-11-15, headless).
 - [x] Copa do Brasil 2026 as a Copa KONAMI with the 32 clubs of the 5th round:
   the 4 not in Séries A/B (Confiança, Jacuipense, Paysandu, Barra-SC) in unused
   slots, with CBF match-sheet squads, generic faces and their crests (13/11/2026).

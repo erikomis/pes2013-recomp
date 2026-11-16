@@ -62,7 +62,10 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 - [x] Master League na América Latina com o perfil 2026: criar, salvar, carregar (13/11/2026,
   sem janela). Fechava o jogo porque a Libertadores 2026 passava do limite de 8000 jogadores do
   save da ML; as seleções agora usam jogadores de clube (`tools/fix_national_squads_2026.py`).
-- [ ] Master League: jogar uma temporada inteira; Rumo ao Estrelato: criar, salvar, carregar.
+- [x] Rumo ao Estrelato: criar, salvar, carregar (15/11/2026, sem janela).
+- [x] Master League: partidas até o fim e volta ao menu sem travar (15/11/2026: um semáforo já
+  destruído fazia o jogo esperar o semáforo de outro thread; 3 de 3 depois da correção).
+- [ ] Master League: jogar uma temporada inteira.
 - [ ] Salvar e carregar um Option File editado dentro do jogo. Feito em 13/11/2026, sem janela:
   Editar > Salvar grava o EDIT inteiro (7,9 MB), idêntico byte a byte ao que as ferramentas
   geram, e o jogo o lê de volta a cada abertura. Falta salvar depois de uma edição feita no jogo.
@@ -158,7 +161,7 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 - [ ] Uniformes dos clubes estrangeiros: nenhuma fonte de 2026 encontrada.
 - [ ] Estádios 3D novos (Bombonera, Allianz Parque...): exigiriam converter o modelo
   inteiro; o jogo só tem Maracanã, Morumbi, Vila Belmiro e o Monumental.
-- [ ] Uma partida, a Master League e uma Libertadores jogadas com o perfil.
+- [x] Uma partida, a Master League e uma Libertadores jogadas com o perfil (15/11/2026, sem janela).
 - [x] Copa do Brasil 2026 como Copa KONAMI com os 32 clubes da 5ª fase: os 4 que
   não estão nas Séries A/B (Confiança, Jacuipense, Paysandu, Barra-SC) em vagas
   livres, com elencos das súmulas da CBF, rostos genéricos e escudos (13/11/2026).
