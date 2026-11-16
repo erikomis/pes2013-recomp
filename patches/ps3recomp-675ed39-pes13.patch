@@ -7909,10 +7909,85 @@ index c64b0b8d..4c4ee6a6 100644
          t->state = PPU_THREAD_STATE_FREE;
          pthread_mutex_destroy(&t->finish_mutex);
 diff --git a/runtime/syscalls/sys_semaphore.c b/runtime/syscalls/sys_semaphore.c
-index a05eeecf..0fbc7b72 100644
+index a05eeecf..8221ccc7 100644
 --- a/runtime/syscalls/sys_semaphore.c
 +++ b/runtime/syscalls/sys_semaphore.c
-@@ -226,20 +226,42 @@ int64_t sys_semaphore_create(ppu_context* ctx)
+@@ -15,6 +15,74 @@
+  * -----------------------------------------------------------------------*/
+ sys_semaphore_info g_sys_semaphores[SYS_SEMAPHORE_MAX];
+ 
++/* Semaphore ids carry a generation as well as the slot: id = (gen << 8 | slot) + 1.
++ * LV2 does not hand a destroyed id out again soon, so a title that waits on or posts
++ * a semaphore it has already destroyed gets ESRCH and carries on. With bare slot
++ * numbers the next semaphore created in that slot answered instead: PES 2013's file
++ * uncompress thread, waiting on the lock of a file object already closed, blocked
++ * for ever on a new thread's start semaphore that had taken the same slot, and the
++ * main thread behind it (a Master League match that never loaded, or never returned).
++ * The first generation of every slot keeps the old id (slot + 1). */
++_Static_assert(SYS_SEMAPHORE_MAX == 256, "sem ids keep the slot in their low 8 bits");
++static uint32_t s_sem_gen[SYS_SEMAPHORE_MAX];
++static uint8_t  s_sem_used[SYS_SEMAPHORE_MAX];
++static uint32_t sem_make_id(uint32_t slot) { return ((s_sem_gen[slot] & 0x7FFFFFu) << 8 | slot) + 1u; }
++/* The slot an id names, or -1 for 0 or a slot whose generation has moved on. */
++static int sem_slot_of(uint32_t sem_id)
++{
++    if (sem_id == 0) return -1;
++    const uint32_t slot = (sem_id - 1) & 0xFFu, gen = (sem_id - 1) >> 8;
++    if (gen != (s_sem_gen[slot] & 0x7FFFFFu)) return -1;
++    return (int)slot;
++}
++/* A stale id used by the title: said once per (id, caller), the first 32. */
++static void sem_report_stale(uint32_t sem_id, const char* op, uint32_t lr)
++{
++    if (sem_id == 0) return;
++    const uint32_t slot = (sem_id - 1) & 0xFFu, gen = (sem_id - 1) >> 8;
++    if (gen == (s_sem_gen[slot] & 0x7FFFFFu)) return;
++    static int n = 0;
++    if (n++ < 32)
++        fprintf(stderr, "[sem] %s on a destroyed semaphore id 0x%X (slot %u now holds generation %u)"
++                        " lr=0x%08X -> ESRCH%c", op, sem_id, slot, s_sem_gen[slot], lr, 10);
++}
++
++/* SEMSTALL history: the last 16 operations on every semaphore (who, from where,
++ * and the value they left), printed with a stall report. A semaphore used as a
++ * signal (created at 0, posted by the producer) shows whether its producer ever
++ * posted, and when; the ids differ between runs, so a per-id trace cannot be set
++ * up in advance. Recorded only while SEMSTALL is set. */
++#define SEM_HIST 16
++typedef struct { uint32_t tid, lr, arg; int32_t value; char op; } sem_hist_ent;
++static sem_hist_ent s_sem_hist[SYS_SEMAPHORE_MAX][SEM_HIST];
++static uint32_t     s_sem_hist_n[SYS_SEMAPHORE_MAX];
++static int sem_hist_on(void)
++{
++    static int on = -1;
++    if (on < 0) { const char* e = getenv("SEMSTALL"); on = e && atoi(e) > 0; }
++    return on;
++}
++/* caller holds the semaphore's mtx (or does not care about a torn entry) */
++static void sem_hist_add(uint32_t sem_id, char op, ppu_context* ctx, uint32_t arg, int32_t value)
++{
++    if (!sem_hist_on() || sem_id == 0) return;
++    const uint32_t i = (sem_id - 1) & 0xFFu;
++    sem_hist_ent* e = &s_sem_hist[i][s_sem_hist_n[i]++ % SEM_HIST];
++    e->tid = (uint32_t)ctx->thread_id; e->lr = (uint32_t)ctx->lr; e->arg = arg; e->value = value; e->op = op;
++}
++static void sem_hist_dump(uint32_t sem_id)
++{
++    if (sem_id == 0) return;
++    const uint32_t i = (sem_id - 1) & 0xFFu, n = s_sem_hist_n[i];
++    fprintf(stderr, "[semstall]   sem=%u: %u operations so far, the last ones (oldest first):%c", sem_id, n, 10);
++    for (uint32_t k = n > SEM_HIST ? n - SEM_HIST : 0; k < n; k++) {
++        const sem_hist_ent* e = &s_sem_hist[i][k % SEM_HIST];
++        fprintf(stderr, "[semstall]     #%u %c tid=%u lr=0x%08X arg=%u value-after=%d%c",
++                k, e->op, e->tid, e->lr, e->arg, e->value, 10);
++    }
++}
++
++
+ #ifdef _WIN32
+ static CRITICAL_SECTION s_sem_table_lock;
+ static int              s_sem_table_lock_init = 0;
+@@ -226,20 +294,42 @@ int64_t sys_semaphore_create(ppu_context* ctx)
  
      sem_table_lock();
  
@@ -7957,7 +8032,7 @@ index a05eeecf..0fbc7b72 100644
  
      if (attr_addr != 0) {
          uint8_t* attr_raw = (uint8_t*)vm_to_host(attr_addr);
-@@ -264,8 +286,7 @@ int64_t sys_semaphore_create(ppu_context* ctx)
+@@ -264,14 +354,21 @@ int64_t sys_semaphore_create(ppu_context* ctx)
          return (int64_t)(int32_t)CELL_EAGAIN;
      }
  #else
@@ -7966,8 +8041,40 @@ index a05eeecf..0fbc7b72 100644
 +    pthread_mutex_unlock(&s->mtx);
  #endif
  
-     uint32_t sem_id = (uint32_t)(slot + 1);
-@@ -308,12 +329,18 @@ int64_t sys_semaphore_destroy(ppu_context* ctx)
+-    uint32_t sem_id = (uint32_t)(slot + 1);
++    /* a new semaphore in a slot used before gets the next generation; the first one
++     * a slot ever holds keeps generation 0, so its id stays slot + 1 */
++    if (s_sem_used[slot]) s_sem_gen[slot]++;
++    s_sem_used[slot] = 1;
++    uint32_t sem_id = sem_make_id((uint32_t)slot);
+     if (id_out_addr != 0) {
+         write_be32(id_out_addr, sem_id);
+     }
++    if (sem_hist_on()) {
++        s_sem_hist_n[slot] = 0;                 /* a new semaphore in this slot: a new history */
++        sem_hist_add(sem_id, 'C', ctx, (uint32_t)max_val, initial);
++    }
+ 
+     /* Identify every semaphore at birth: name + creator's guest LR. The
+      * LBP movie stall was a 2369-waits/0-posts semaphore whose OWNER took
+@@ -294,12 +391,14 @@ int64_t sys_semaphore_destroy(ppu_context* ctx)
+ {
+     uint32_t sem_id = LV2_ARG_U32(ctx, 0);
+ 
+-    if (sem_id == 0 || sem_id > SYS_SEMAPHORE_MAX)
++    if (sem_slot_of(sem_id) < 0) {
++        sem_report_stale(sem_id, "destroy", (uint32_t)ctx->lr);
+         return (int64_t)(int32_t)CELL_ESRCH;
++    }
+ 
+     sem_table_lock();
+ 
+-    sys_semaphore_info* s = &g_sys_semaphores[sem_id - 1];
++    sys_semaphore_info* s = &g_sys_semaphores[sem_slot_of(sem_id)];
+     if (!s->active) {
+         sem_table_unlock();
+         return (int64_t)(int32_t)CELL_ESRCH;
+@@ -308,12 +407,18 @@ int64_t sys_semaphore_destroy(ppu_context* ctx)
  #ifdef _WIN32
      CloseHandle(s->sem_handle);
      DeleteCriticalSection(&s->value_lock);
@@ -7990,7 +8097,7 @@ index a05eeecf..0fbc7b72 100644
      sem_table_unlock();
      return CELL_OK;
  }
-@@ -326,6 +353,24 @@ int64_t sys_semaphore_destroy(ppu_context* ctx)
+@@ -326,6 +431,24 @@ int64_t sys_semaphore_destroy(ppu_context* ctx)
   * -----------------------------------------------------------------------*/
  /* SEM_ERRDBG=1: report non-OK returns. PSGL's PlatformDevice asserts on one of
   * these once per frame, and naming the failing call beats inferring it. */
@@ -8015,7 +8122,7 @@ index a05eeecf..0fbc7b72 100644
  static int64_t sys_semaphore_wait_impl(ppu_context* ctx);
  int64_t sys_semaphore_wait(ppu_context* ctx)
  {
-@@ -344,6 +389,7 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
+@@ -344,6 +467,7 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
                    (unsigned long long)ctx->thread_id, 10); } }
      uint32_t sem_id     = LV2_ARG_U32(ctx, 0);
      uint64_t timeout_us = LV2_ARG_U64(ctx, 1);
@@ -8023,7 +8130,27 @@ index a05eeecf..0fbc7b72 100644
      /* Per-port hook: an engine job manager may spin on sys_semaphore_wait /
       * trywait waiting for SPU-job completions a lifted policy module never
       * writes, so a port can satisfy them here. Defined weakly below, so this is
-@@ -410,34 +456,101 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
+@@ -367,16 +491,17 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
+         static int _c = 0;
+         if (PS3_LOG_FIRST(_c, 2)) { extern void ppu_log_host_chain(const char*); ppu_log_host_chain("sem7-wait-tid0"); }
+     }
+-    if (sem_id == 0 || sem_id > SYS_SEMAPHORE_MAX) {
++    if (sem_slot_of(sem_id) < 0) {
+         /* SEM_BADID=1: a wait/post on a handle that was never created means
+          * some earlier init did not run, and the useful evidence is WHICH
+          * object the caller read the handle out of -- not that the call
+          * failed. Report the caller and its pointer-shaped registers. */
++        sem_report_stale(sem_id, "wait", (uint32_t)ctx->lr);
+         sem_report_bad_id(ctx, sem_id, "wait");
+         return (int64_t)(int32_t)CELL_ESRCH;
+     }
+ 
+-    sys_semaphore_info* s = &g_sys_semaphores[sem_id - 1];
++    sys_semaphore_info* s = &g_sys_semaphores[sem_slot_of(sem_id)];
+     if (!s->active)
+         return (int64_t)(int32_t)CELL_ESRCH;
+ 
+@@ -410,34 +535,106 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
      }
  #else
      pthread_mutex_lock(&s->mtx);
@@ -8052,6 +8179,7 @@ index a05eeecf..0fbc7b72 100644
 -        if (ts.tv_nsec >= 1000000000L) {
 -            ts.tv_sec++;
 -            ts.tv_nsec -= 1000000000L;
++        sem_hist_add(sem_id, 'W', ctx, 0, s->value);
 +        pthread_mutex_unlock(&s->mtx);
 +        return CELL_OK;
 +    }
@@ -8060,6 +8188,7 @@ index a05eeecf..0fbc7b72 100644
 +    sys_semaphore_waiter me = { NULL, 0 };
 +    if (s->tail) s->tail->next = &me; else s->head = &me;
 +    s->tail = &me;
++    sem_hist_add(sem_id, 'Q', ctx, (uint32_t)timeout_us, s->value);
 +    s->waiters++;
 +
 +    /* SEMSTALL=<seconds>: a wait that blocks longer than this prints one
@@ -8097,6 +8226,7 @@ index a05eeecf..0fbc7b72 100644
 +                        sem_id, (unsigned long long)ctx->thread_id, stall_s,
 +                        s->value, s->max_value, s->waiters,
 +                        (unsigned)ctx->lr, s->owner_tid, s->owner_lr, 10);
++                sem_hist_dump(sem_id);
 +                /* One full snapshot of the table, so the counters of the
 +                 * other threads are visible next to the blocked one. */
 +                static int once = 0;
@@ -8134,6 +8264,7 @@ index a05eeecf..0fbc7b72 100644
 -                pthread_mutex_unlock(&s->mtx);
 -                return (int64_t)(int32_t)CELL_ETIMEDOUT;
 -            }
++            sem_hist_add(sem_id, 'T', ctx, 0, s->value);
 +            pthread_mutex_unlock(&s->mtx);
 +            return (int64_t)(int32_t)CELL_ETIMEDOUT;
          }
@@ -8145,18 +8276,34 @@ index a05eeecf..0fbc7b72 100644
 +        s->owner_tid = (uint32_t)ctx->thread_id;
 +        s->owner_lr  = (uint32_t)ctx->lr;
 +    }
++    sem_hist_add(sem_id, 'G', ctx, 0, s->value);
      pthread_mutex_unlock(&s->mtx);
  #endif
  
-@@ -452,6 +565,7 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
+@@ -452,18 +649,20 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
  int64_t sys_semaphore_trywait(ppu_context* ctx)
  {
      uint32_t sem_id = LV2_ARG_U32(ctx, 0);
 +    sem_trace("trywait", sem_id, ctx, 0);
      { extern void ps3_spu_job_complete_pending(void); ps3_spu_job_complete_pending(); }
  
-     if (sem_id == 0 || sem_id > SYS_SEMAPHORE_MAX) {
-@@ -482,11 +596,15 @@ int64_t sys_semaphore_trywait(ppu_context* ctx)
+-    if (sem_id == 0 || sem_id > SYS_SEMAPHORE_MAX) {
++    if (sem_slot_of(sem_id) < 0) {
+         /* SEM_BADID=1: a wait/post on a handle that was never created means
+          * some earlier init did not run, and the useful evidence is WHICH
+          * object the caller read the handle out of -- not that the call
+          * failed. Report the caller and its pointer-shaped registers. */
++        sem_report_stale(sem_id, "trywait", (uint32_t)ctx->lr);
+         sem_report_bad_id(ctx, sem_id, "trywait");
+         return (int64_t)(int32_t)CELL_ESRCH;
+     }
+ 
+-    sys_semaphore_info* s = &g_sys_semaphores[sem_id - 1];
++    sys_semaphore_info* s = &g_sys_semaphores[sem_slot_of(sem_id)];
+     if (!s->active) {
+         static int _n = 0; if (PS3_LOG_FIRST(_n, 6))
+             fprintf(stderr, "[sem] post(id=%u) -> ESRCH: slot inactive"
+@@ -482,11 +681,16 @@ int64_t sys_semaphore_trywait(ppu_context* ctx)
      LeaveCriticalSection(&s->value_lock);
  #else
      pthread_mutex_lock(&s->mtx);
@@ -8170,10 +8317,11 @@ index a05eeecf..0fbc7b72 100644
 +        s->owner_tid = (uint32_t)ctx->thread_id;
 +        s->owner_lr  = (uint32_t)ctx->lr;
 +    }
++    sem_hist_add(sem_id, 'w', ctx, 0, s->value);
      pthread_mutex_unlock(&s->mtx);
  #endif
  
-@@ -503,6 +621,7 @@ int64_t sys_semaphore_post(ppu_context* ctx)
+@@ -503,6 +707,7 @@ int64_t sys_semaphore_post(ppu_context* ctx)
  {
      uint32_t sem_id = LV2_ARG_U32(ctx, 0);
      int32_t  count  = LV2_ARG_S32(ctx, 1);
@@ -8181,7 +8329,30 @@ index a05eeecf..0fbc7b72 100644
  
      { static int _n=0; if (getenv("SEMTID") && _n < 60000)
          fprintf(stderr, "[WAKE tid=%llu] semaphore_post(sem=%u count=%d)\n",
-@@ -556,15 +675,29 @@ int64_t sys_semaphore_post(ppu_context* ctx)
+@@ -519,11 +724,12 @@ int64_t sys_semaphore_post(ppu_context* ctx)
+             ppu_log_host_chain("sem3-post"); }
+     }
+ 
+-    if (sem_id == 0 || sem_id > SYS_SEMAPHORE_MAX) {
++    if (sem_slot_of(sem_id) < 0) {
+         /* SEM_BADID=1: a wait/post on a handle that was never created means
+          * some earlier init did not run, and the useful evidence is WHICH
+          * object the caller read the handle out of -- not that the call
+          * failed. Report the caller and its pointer-shaped registers. */
++        sem_report_stale(sem_id, "post", (uint32_t)ctx->lr);
+         sem_report_bad_id(ctx, sem_id, "post");
+         return (int64_t)(int32_t)CELL_ESRCH;
+     }
+@@ -531,7 +737,7 @@ int64_t sys_semaphore_post(ppu_context* ctx)
+     if (count <= 0)
+         return (int64_t)(int32_t)CELL_EINVAL;
+ 
+-    sys_semaphore_info* s = &g_sys_semaphores[sem_id - 1];
++    sys_semaphore_info* s = &g_sys_semaphores[sem_slot_of(sem_id)];
+     if (!s->active)
+         return (int64_t)(int32_t)CELL_ESRCH;
+ 
+@@ -556,15 +762,31 @@ int64_t sys_semaphore_post(ppu_context* ctx)
          ReleaseSemaphore(s->sem_handle, wake, NULL);
  #else
      pthread_mutex_lock(&s->mtx);
@@ -8190,6 +8361,7 @@ index a05eeecf..0fbc7b72 100644
 +        return (int64_t)(int32_t)CELL_ESRCH;
 +    }
      if (s->value + count > s->max_value) {
++        sem_hist_add(sem_id, 'X', ctx, (uint32_t)count, s->value);   /* post refused: over max */
          pthread_mutex_unlock(&s->mtx);
          return (int64_t)(int32_t)CELL_EBUSY;
      }
@@ -8211,9 +8383,23 @@ index a05eeecf..0fbc7b72 100644
 -     * re-check value — but min(count,waiters) signals is precise). */
 -    { int wake = (count < s->waiters) ? count : s->waiters;
 -      for (int i = 0; i < wake; i++) pthread_cond_signal(&s->cv); }
++    sem_hist_add(sem_id, 'P', ctx, (uint32_t)(count + granted), s->value);
 +    if (granted) pthread_cond_broadcast(&s->cv);
      pthread_mutex_unlock(&s->mtx);
  #endif
+ 
+@@ -582,10 +804,10 @@ int64_t sys_semaphore_get_value(ppu_context* ctx)
+     uint32_t sem_id   = LV2_ARG_U32(ctx, 0);
+     uint32_t out_addr = LV2_ARG_PTR(ctx, 1);
+ 
+-    if (sem_id == 0 || sem_id > SYS_SEMAPHORE_MAX)
++    if (sem_slot_of(sem_id) < 0)
+         return (int64_t)(int32_t)CELL_ESRCH;
+ 
+-    sys_semaphore_info* s = &g_sys_semaphores[sem_id - 1];
++    sys_semaphore_info* s = &g_sys_semaphores[sem_slot_of(sem_id)];
+     if (!s->active)
+         return (int64_t)(int32_t)CELL_ESRCH;
  
 diff --git a/runtime/syscalls/sys_semaphore.h b/runtime/syscalls/sys_semaphore.h
 index 38f7b65e..6115f4ef 100644
@@ -8258,10 +8444,10 @@ index 38f7b65e..6115f4ef 100644
  
  /* Syscall handlers */
 diff --git a/tests/sync_stress/main.c b/tests/sync_stress/main.c
-index 5502412b..9be1ed10 100644
+index 5502412b..e464f649 100644
 --- a/tests/sync_stress/main.c
 +++ b/tests/sync_stress/main.c
-@@ -1429,6 +1429,89 @@ static int test5_rwlock_ownership(void)
+@@ -1429,6 +1429,132 @@ static int test5_rwlock_ownership(void)
  /* =========================================================================
   * main
   * ========================================================================= */
@@ -8308,10 +8494,10 @@ index 5502412b..9be1ed10 100644
 +        HANDLE th = (HANDLE)_beginthreadex(NULL, 0, t7_wait_thread, &w, 0, NULL);
 +        /* wait until the thread is parked on the semaphore */
 +        for (int i = 0; i < 2000; i++) {
-+            if (g_sys_semaphores[sid - 1].waiters > 0) break;
++            if (g_sys_semaphores[(sid - 1) & 0xFFu].waiters > 0) break;
 +            Sleep(1);
 +        }
-+        if (g_sys_semaphores[sid - 1].waiters != 1) fail(name, "trial %d: waiter never parked", trial);
++        if (g_sys_semaphores[(sid - 1) & 0xFFu].waiters != 1) fail(name, "trial %d: waiter never parked", trial);
 +
 +        /* destroy with a waiter: EBUSY */
 +        rc = call1((int64_t(*)(ppu_context*))sys_semaphore_destroy, &ctx, sid);
@@ -8346,26 +8532,70 @@ index 5502412b..9be1ed10 100644
 +    printf("[%s] -> %s\n", name, ok ? "PASS" : "FAIL");
 +    return ok ? 0 : 1;
 +}
++
++/* test8: an id the title destroyed must stay dead after its slot is reused. PES 2013's
++ * uncompress thread waited on the lock of a file object already closed; the slot had
++ * since been given to a thread's start semaphore, and the wait blocked on it for ever.
++ * LV2 answers ESRCH for a destroyed id, and the semaphore now in the slot is untouched. */
++static int test8_stale_id_after_reuse(void)
++{
++    const char* name = "test8_stale_id_after_reuse";
++    LONG before = g_fail_count;
++    ppu_context ctx; ctx_init_for_thread(&ctx, alloc_tid());
++    uint32_t sattr = make_sema_attr(SYS_SYNC_FIFO);
++    uint32_t addr = guest_alloc(4);
++    int32_t rc = call4((int64_t(*)(ppu_context*))sys_semaphore_create, &ctx, addr, sattr, 1, 1);
++    if (rc != CELL_OK) { fail(name, "create rc=0x%08X", (unsigned)rc); return 1; }
++    const uint32_t old_id = read_be32(addr);
++    rc = call1((int64_t(*)(ppu_context*))sys_semaphore_destroy, &ctx, old_id);
++    if (rc != CELL_OK) fail(name, "destroy rc=0x%08X", (unsigned)rc);
++    /* create until the old id's slot is handed out again (round robin: within 256) */
++    uint32_t reused = 0, made[SYS_SEMAPHORE_MAX]; int nmade = 0;
++    for (int k = 0; k < SYS_SEMAPHORE_MAX && !reused; k++) {
++        rc = call4((int64_t(*)(ppu_context*))sys_semaphore_create, &ctx, addr, sattr, 0, 1);
++        if (rc != CELL_OK) { fail(name, "create #%d rc=0x%08X", k, (unsigned)rc); break; }
++        const uint32_t id = read_be32(addr);
++        made[nmade++] = id;
++        if (((id - 1) & 0xFFu) == ((old_id - 1) & 0xFFu)) reused = id;
++    }
++    if (!reused) fail(name, "the slot of id %u was never reused", (unsigned)old_id);
++    else {
++        if (reused == old_id) fail(name, "the destroyed id %u came back unchanged", (unsigned)old_id);
++        rc = call2((int64_t(*)(ppu_context*))sys_semaphore_wait, &ctx, old_id, (uint64_t)200000);
++        if (rc != (int32_t)CELL_ESRCH)
++            fail(name, "wait on the destroyed id rc=0x%08X (want ESRCH, not a wait on the new one)", (unsigned)rc);
++        rc = call2((int64_t(*)(ppu_context*))sys_semaphore_post, &ctx, old_id, 1);
++        if (rc != (int32_t)CELL_ESRCH) fail(name, "post on the destroyed id rc=0x%08X (want ESRCH)", (unsigned)rc);
++        rc = call2((int64_t(*)(ppu_context*))sys_semaphore_trywait, &ctx, reused, 0);
++        if (rc != (int32_t)CELL_EBUSY)
++            fail(name, "the new semaphore was changed by the stale post (trywait rc=0x%08X, want EBUSY)", (unsigned)rc);
++    }
++    for (int k = 0; k < nmade; k++) call1((int64_t(*)(ppu_context*))sys_semaphore_destroy, &ctx, made[k]);
++    printf("[%s] old=%u reused-slot id=%u -> %s\n", name, (unsigned)old_id, (unsigned)reused,
++           g_fail_count == before ? "PASS" : "FAIL");
++    return g_fail_count == before ? 0 : 1;
++}
 +#endif
 +
  int main(int argc, char** argv)
  {
      g_seed = 0;
-@@ -1448,11 +1531,16 @@ int main(int argc, char** argv)
+@@ -1448,11 +1574,17 @@ int main(int argc, char** argv)
      int rc4 = test4_event_queue();
      int rc5 = test5_rwlock_ownership();
      int rc6 = test6_recursive_mutex();
 +#ifndef _WIN32
 +    int rc7 = test7_semaphore_handoff();
++    int rc8 = test8_stale_id_after_reuse();
 +#else
-+    int rc7 = 0;
++    int rc7 = 0, rc8 = 0;
 +#endif
  
      ULONGLONG total_ms = now_ms() - t_start;
      printf("=== total wall time: %llums ===\n", (unsigned long long)total_ms);
  
 -    int failed = rc1a || rc1 || rc2 || rc3 || rc4 || rc5 || rc6 || (g_fail_count != 0);
-+    int failed = rc1a || rc1 || rc2 || rc3 || rc4 || rc5 || rc6 || rc7 || (g_fail_count != 0);
++    int failed = rc1a || rc1 || rc2 || rc3 || rc4 || rc5 || rc6 || rc7 || rc8 || (g_fail_count != 0);
      printf("=== RESULT: %s (fail_count=%ld) ===\n", failed ? "FAIL" : "PASS", (long)g_fail_count);
      return failed ? 1 : 0;
  }

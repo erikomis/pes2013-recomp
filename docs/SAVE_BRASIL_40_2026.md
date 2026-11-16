@@ -578,3 +578,26 @@ Sem janela, com o perfil 2026 (cópias):
   descarregar antes, e uma volta inteira de comandos (com os flips) se perdia. Corrigido no
   runtime (`cellGcm_fifo_recycle` descarrega primeiro); falta ver várias partidas seguidas sem
   congelar. Amostras e logs em `analysis/hangs-2026-11-15/`.
+
+## Travamento da Master League: um semáforo já destruído (15/11/2026)
+
+A causa dos travamentos na volta de uma partida da ML (e de pelo menos um antes de carregar a
+partida, no cartão de apresentação) era o runtime, não o save. O thread de descompressão de
+arquivos do jogo (`sysFileUncompressThread`, `func_0005B1F8`) às vezes pega a trava de um objeto
+de arquivo que já foi fechado. No PS3 esse id de semáforo já não existe, a chamada volta com erro
+(ESRCH) e o jogo segue. No runtime os ids iam de 1 a 256 e eram reaproveitados: o id velho
+apontava para um semáforo novo, de outro thread, e o thread de descompressão (e o principal, que
+espera por ele) ficavam parados para sempre. Visto com um histórico das operações de cada
+semáforo (`SEMSTALL=30`): a trava esperada era o semáforo de largada de outro thread.
+
+Corrigido em `runtime/syscalls/sys_semaphore.c` (vale para todos os ports): cada id leva uma
+geração além da posição na tabela, e um id destruído responde ESRCH, mesmo com a posição já
+reusada. O primeiro semáforo de cada posição mantém o id de antes. O log diz quando o jogo usa um
+id destruído (`[sem] wait on a destroyed semaphore id ...`). Teste novo
+`test8_stale_id_after_reuse` em `tests/sync_stress`: falha com o código antigo (a espera ficava
+no semáforo novo e um `post` velho mudava o semáforo novo), passa com o novo; os outros 7 passam.
+
+No jogo, a mesma partida da Copa KIA (Athletic-MG x Corinthians, modo treinador): o jogo usou 32
+ids destruídos, recebeu ESRCH, foi até o apito final, gravou o autosave e voltou à ML. Os mutex,
+variáveis de condição e filas de eventos do runtime ainda reaproveitam ids (o mutex usa a
+primeira posição livre); não há prova de travamento por eles, mas é o próximo lugar a olhar.
