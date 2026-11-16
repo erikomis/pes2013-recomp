@@ -597,7 +597,10 @@ id destruído (`[sem] wait on a destroyed semaphore id ...`). Teste novo
 `test8_stale_id_after_reuse` em `tests/sync_stress`: falha com o código antigo (a espera ficava
 no semáforo novo e um `post` velho mudava o semáforo novo), passa com o novo; os outros 7 passam.
 
-No jogo, a mesma partida da Copa KIA (Athletic-MG x Corinthians, modo treinador): o jogo usou 32
-ids destruídos, recebeu ESRCH, foi até o apito final, gravou o autosave e voltou à ML. Os mutex,
+No jogo, com a correção: a mesma partida da Copa KIA (Athletic-MG x Corinthians, modo treinador)
+três vezes, e as três foram até o apito final, gravaram o autosave e voltaram à ML (antes, 2 de 4
+travaram). Em cada uma o jogo usou 32 ids destruídos e recebeu ESRCH. A Libertadores carregada do
+save, que antes parava no cartão de apresentação, jogou a partida (Flamengo 4 x 0), salvou
+(`BLUS31029LB01`) e passou para o jogo de volta. Os mutex,
 variáveis de condição e filas de eventos do runtime ainda reaproveitam ids (o mutex usa a
 primeira posição livre); não há prova de travamento por eles, mas é o próximo lugar a olhar.
