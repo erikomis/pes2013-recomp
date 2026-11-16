@@ -1344,10 +1344,29 @@ index 4fed2533..97d52a56 100644
          result == CELL_SAVEDATA_CBRESULT_OK_LAST_NOCONFIRM) return CELL_OK;
      if (result != CELL_SAVEDATA_CBRESULT_OK_NEXT) {
 diff --git a/libs/system/sysPrxForUser.c b/libs/system/sysPrxForUser.c
-index b2cba7b6..49412821 100644
+index b2cba7b6..4edd26e9 100644
 --- a/libs/system/sysPrxForUser.c
 +++ b/libs/system/sysPrxForUser.c
-@@ -1042,6 +1042,108 @@ s32 sys_prx_exitspawn_with_level(void)
+@@ -495,8 +495,10 @@ s32 sys_ppu_thread_once(u32 once_ctrl_ea, u32 init_opd)
+     return CELL_OK;
+ }
+ 
++void ps3_sync_count(int kind, int created);
+ s32 sys_lwmutex_create(sys_lwmutex_t_hle* lwmutex, const sys_lwmutex_attribute_t* attr)
+ {
++    ps3_sync_count(5, 1);
+     YZ_XLAT(lwmutex, sys_lwmutex_t_hle*);
+     YZ_XLAT(attr, const sys_lwmutex_attribute_t*);
+     if (!lwmutex) return CELL_EFAULT;
+@@ -614,6 +616,7 @@ s32 sys_lwmutex_unlock(sys_lwmutex_t_hle* lwmutex)
+ 
+ s32 sys_lwmutex_destroy(sys_lwmutex_t_hle* lwmutex)
+ {
++    ps3_sync_count(5, 0);
+     YZ_XLAT(lwmutex, sys_lwmutex_t_hle*);
+ #ifdef _WIN32
+     printf("[sysPrxForUser] sys_lwmutex_destroy(guest=0x%08X) [host tid %lu]\n",
+@@ -1042,6 +1045,108 @@ s32 sys_prx_exitspawn_with_level(void)
      return CELL_OK;
  }
  
@@ -7728,10 +7747,42 @@ index 8815650c..cdcb89fc 100644
      lv2_syscall_register(tbl, SYS_SPU_THREAD_GROUP_CONNECT_EVENT_ALL_THREADS, sys_spu_thread_group_connect_event_all_threads_handler);
  }
  
+diff --git a/runtime/syscalls/sys_cond.c b/runtime/syscalls/sys_cond.c
+index 45235ea6..867e660f 100644
+--- a/runtime/syscalls/sys_cond.c
++++ b/runtime/syscalls/sys_cond.c
+@@ -52,8 +52,10 @@ static sys_cond_info* acquire_cond(uint32_t id)
+     return c;
+ }
+ 
++void ps3_sync_count(int kind, int created);
+ int64_t sys_cond_create(ppu_context* ctx)
+ {
++    ps3_sync_count(2, 1);
+     uint32_t out = LV2_ARG_PTR(ctx, 0);
+     uint32_t mid = LV2_ARG_U32(ctx, 1);
+     uint32_t attr = LV2_ARG_PTR(ctx, 2);
+@@ -104,6 +106,7 @@ int64_t sys_cond_create(ppu_context* ctx)
+ 
+ int64_t sys_cond_destroy(ppu_context* ctx)
+ {
++    ps3_sync_count(2, 0);
+     uint32_t id = LV2_ARG_U32(ctx, 0);
+     if (!id || id > SYS_COND_MAX) return (int32_t)CELL_ESRCH;
+     table_lock();
 diff --git a/runtime/syscalls/sys_event.c b/runtime/syscalls/sys_event.c
-index e8baa926..6f340348 100644
+index e8baa926..5efa3cac 100644
 --- a/runtime/syscalls/sys_event.c
 +++ b/runtime/syscalls/sys_event.c
+@@ -9,7 +9,7 @@
+ #include "../spu/spu_workload.h"   /* spu_elf_image_size, spu_workload_dispatch_async */
+ #include <string.h>
+ #include <stdlib.h>               /* getenv */
+-#include "ps3emu/log_first.h"
++#include "ps3emu/log_first.h"
+ 
+ /* Recorded by sys_spu_thread_initialize (lv2_register.c): the SPURS kernel
+  * context EA the title's SPU task runtime is dispatched against. */
 @@ -943,8 +943,40 @@ int sys_event_queue_push_by_id(uint32_t queue_id,
      return event_queue_push(q, &evt);
  }
@@ -7775,6 +7826,25 @@ index e8baa926..6f340348 100644
   * cellAudio to route the audio-period notify event to the game's queue. */
  uint32_t sys_event_find_queue_by_key(uint64_t key)
  {
+@@ -1052,8 +1084,10 @@ int64_t sys_event_port_send(ppu_context* ctx)
+  * EVENT FLAGS
+  * ========================================================================= */
+ 
++void ps3_sync_count(int kind, int created);
+ int64_t sys_event_flag_create(ppu_context* ctx)
+ {
++    ps3_sync_count(4, 1);
+     uint32_t id_out_addr = LV2_ARG_PTR(ctx, 0);
+     uint32_t attr_addr   = LV2_ARG_PTR(ctx, 1);
+     uint64_t init_pattern = LV2_ARG_U64(ctx, 2);
+@@ -1113,6 +1147,7 @@ int64_t sys_event_flag_create(ppu_context* ctx)
+ 
+ int64_t sys_event_flag_destroy(ppu_context* ctx)
+ {
++    ps3_sync_count(4, 0);
+     uint32_t flag_id = LV2_ARG_U32(ctx, 0);
+ 
+     if (flag_id == 0 || flag_id > SYS_EVENT_FLAG_MAX)
 diff --git a/runtime/syscalls/sys_event.h b/runtime/syscalls/sys_event.h
 index 14c64255..d1bd27dd 100644
 --- a/runtime/syscalls/sys_event.h
@@ -7865,6 +7935,29 @@ index ae763575..39b99cf3 100644
      return (int64_t)(int32_t)CELL_EINVAL;
  }
  
+diff --git a/runtime/syscalls/sys_mutex.c b/runtime/syscalls/sys_mutex.c
+index 2e760ea5..a8dfe8ef 100644
+--- a/runtime/syscalls/sys_mutex.c
++++ b/runtime/syscalls/sys_mutex.c
+@@ -69,8 +69,10 @@ static void write_be32(uint32_t addr, uint32_t val)
+  * r3 = pointer to receive mutex ID (u32*)
+  * r4 = pointer to attribute struct
+  * -----------------------------------------------------------------------*/
++void ps3_sync_count(int kind, int created);
+ int64_t sys_mutex_create(ppu_context* ctx)
+ {
++    ps3_sync_count(1, 1);
+     uint32_t id_out_addr = LV2_ARG_PTR(ctx, 0);
+     uint32_t attr_addr   = LV2_ARG_PTR(ctx, 1);
+ 
+@@ -146,6 +148,7 @@ int64_t sys_mutex_create(ppu_context* ctx)
+  * -----------------------------------------------------------------------*/
+ int64_t sys_mutex_destroy(ppu_context* ctx)
+ {
++    ps3_sync_count(1, 0);
+     uint32_t mutex_id = LV2_ARG_U32(ctx, 0);
+ 
+     if (mutex_id == 0 || mutex_id > SYS_MUTEX_MAX)
 diff --git a/runtime/syscalls/sys_ppu_thread.c b/runtime/syscalls/sys_ppu_thread.c
 index c64b0b8d..4c4ee6a6 100644
 --- a/runtime/syscalls/sys_ppu_thread.c
@@ -7908,14 +8001,54 @@ index c64b0b8d..4c4ee6a6 100644
      if (rc != 0) {
          t->state = PPU_THREAD_STATE_FREE;
          pthread_mutex_destroy(&t->finish_mutex);
+diff --git a/runtime/syscalls/sys_rwlock.c b/runtime/syscalls/sys_rwlock.c
+index 2aa301a8..f1d95b59 100644
+--- a/runtime/syscalls/sys_rwlock.c
++++ b/runtime/syscalls/sys_rwlock.c
+@@ -43,8 +43,10 @@ static void write_be32(uint32_t addr, uint32_t val)
+  * r3 = pointer to receive rwlock ID (u32*)
+  * r4 = pointer to attribute struct
+  * -----------------------------------------------------------------------*/
++void ps3_sync_count(int kind, int created);
+ int64_t sys_rwlock_create(ppu_context* ctx)
+ {
++    ps3_sync_count(3, 1);
+     uint32_t id_out_addr = LV2_ARG_PTR(ctx, 0);
+     uint32_t attr_addr   = LV2_ARG_PTR(ctx, 1);
+ 
+@@ -90,6 +92,7 @@ int64_t sys_rwlock_create(ppu_context* ctx)
+ 
+ int64_t sys_rwlock_destroy(ppu_context* ctx)
+ {
++    ps3_sync_count(3, 0);
+     uint32_t rwlock_id = LV2_ARG_U32(ctx, 0);
+ 
+     if (rwlock_id == 0 || rwlock_id > SYS_RWLOCK_MAX)
 diff --git a/runtime/syscalls/sys_semaphore.c b/runtime/syscalls/sys_semaphore.c
-index a05eeecf..8221ccc7 100644
+index a05eeecf..85e146a7 100644
 --- a/runtime/syscalls/sys_semaphore.c
 +++ b/runtime/syscalls/sys_semaphore.c
-@@ -15,6 +15,74 @@
+@@ -15,6 +15,91 @@
   * -----------------------------------------------------------------------*/
  sys_semaphore_info g_sys_semaphores[SYS_SEMAPHORE_MAX];
  
++/* PS3_SYNC_STATS=1: how many of each kind of LV2 sync object a title creates and
++ * destroys, every 50 events (kind: 0 semaphore, 1 mutex, 2 cond, 3 rwlock, 4 event
++ * flag, 5 lwmutex). Objects that are destroyed and created again are the ones whose ids get
++ * reused. */
++void ps3_sync_count(int kind, int created)
++{
++    static int on = -1;
++    if (on < 0) { const char* e = getenv("PS3_SYNC_STATS"); on = e && atoi(e) > 0; }
++    if (!on || kind < 0 || kind > 5) return;
++    static unsigned c[6], d[6], n;
++    if (created) __atomic_add_fetch(&c[kind], 1, __ATOMIC_RELAXED);
++    else __atomic_add_fetch(&d[kind], 1, __ATOMIC_RELAXED);
++    if (__atomic_add_fetch(&n, 1, __ATOMIC_RELAXED) % 50 == 0)
++        fprintf(stderr, "[sync-stats] created/destroyed: sem %u/%u mutex %u/%u cond %u/%u rwlock %u/%u eventflag %u/%u lwmutex %u/%u%c",
++                c[0], d[0], c[1], d[1], c[2], d[2], c[3], d[3], c[4], d[4], c[5], d[5], 10);
++}
++
 +/* Semaphore ids carry a generation as well as the slot: id = (gen << 8 | slot) + 1.
 + * LV2 does not hand a destroyed id out again soon, so a title that waits on or posts
 + * a semaphore it has already destroyed gets ESRCH and carries on. With bare slot
@@ -7987,7 +8120,15 @@ index a05eeecf..8221ccc7 100644
  #ifdef _WIN32
  static CRITICAL_SECTION s_sem_table_lock;
  static int              s_sem_table_lock_init = 0;
-@@ -226,20 +294,42 @@ int64_t sys_semaphore_create(ppu_context* ctx)
+@@ -216,6 +301,7 @@ static void sem_report_bad_id(ppu_context* ctx, uint32_t sem_id, const char* op)
+ 
+ int64_t sys_semaphore_create(ppu_context* ctx)
+ {
++    ps3_sync_count(0, 1);
+     uint32_t id_out_addr  = LV2_ARG_PTR(ctx, 0);
+     uint32_t attr_addr    = LV2_ARG_PTR(ctx, 1);
+     int32_t  initial      = LV2_ARG_S32(ctx, 2);
+@@ -226,20 +312,42 @@ int64_t sys_semaphore_create(ppu_context* ctx)
  
      sem_table_lock();
  
@@ -8032,7 +8173,7 @@ index a05eeecf..8221ccc7 100644
  
      if (attr_addr != 0) {
          uint8_t* attr_raw = (uint8_t*)vm_to_host(attr_addr);
-@@ -264,14 +354,21 @@ int64_t sys_semaphore_create(ppu_context* ctx)
+@@ -264,14 +372,21 @@ int64_t sys_semaphore_create(ppu_context* ctx)
          return (int64_t)(int32_t)CELL_EAGAIN;
      }
  #else
@@ -8057,8 +8198,11 @@ index a05eeecf..8221ccc7 100644
  
      /* Identify every semaphore at birth: name + creator's guest LR. The
       * LBP movie stall was a 2369-waits/0-posts semaphore whose OWNER took
-@@ -294,12 +391,14 @@ int64_t sys_semaphore_destroy(ppu_context* ctx)
+@@ -292,14 +407,17 @@ int64_t sys_semaphore_create(ppu_context* ctx)
+  * -----------------------------------------------------------------------*/
+ int64_t sys_semaphore_destroy(ppu_context* ctx)
  {
++    ps3_sync_count(0, 0);
      uint32_t sem_id = LV2_ARG_U32(ctx, 0);
  
 -    if (sem_id == 0 || sem_id > SYS_SEMAPHORE_MAX)
@@ -8074,7 +8218,7 @@ index a05eeecf..8221ccc7 100644
      if (!s->active) {
          sem_table_unlock();
          return (int64_t)(int32_t)CELL_ESRCH;
-@@ -308,12 +407,18 @@ int64_t sys_semaphore_destroy(ppu_context* ctx)
+@@ -308,12 +426,18 @@ int64_t sys_semaphore_destroy(ppu_context* ctx)
  #ifdef _WIN32
      CloseHandle(s->sem_handle);
      DeleteCriticalSection(&s->value_lock);
@@ -8097,7 +8241,7 @@ index a05eeecf..8221ccc7 100644
      sem_table_unlock();
      return CELL_OK;
  }
-@@ -326,6 +431,24 @@ int64_t sys_semaphore_destroy(ppu_context* ctx)
+@@ -326,6 +450,24 @@ int64_t sys_semaphore_destroy(ppu_context* ctx)
   * -----------------------------------------------------------------------*/
  /* SEM_ERRDBG=1: report non-OK returns. PSGL's PlatformDevice asserts on one of
   * these once per frame, and naming the failing call beats inferring it. */
@@ -8122,7 +8266,7 @@ index a05eeecf..8221ccc7 100644
  static int64_t sys_semaphore_wait_impl(ppu_context* ctx);
  int64_t sys_semaphore_wait(ppu_context* ctx)
  {
-@@ -344,6 +467,7 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
+@@ -344,6 +486,7 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
                    (unsigned long long)ctx->thread_id, 10); } }
      uint32_t sem_id     = LV2_ARG_U32(ctx, 0);
      uint64_t timeout_us = LV2_ARG_U64(ctx, 1);
@@ -8130,7 +8274,7 @@ index a05eeecf..8221ccc7 100644
      /* Per-port hook: an engine job manager may spin on sys_semaphore_wait /
       * trywait waiting for SPU-job completions a lifted policy module never
       * writes, so a port can satisfy them here. Defined weakly below, so this is
-@@ -367,16 +491,17 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
+@@ -367,16 +510,17 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
          static int _c = 0;
          if (PS3_LOG_FIRST(_c, 2)) { extern void ppu_log_host_chain(const char*); ppu_log_host_chain("sem7-wait-tid0"); }
      }
@@ -8150,7 +8294,7 @@ index a05eeecf..8221ccc7 100644
      if (!s->active)
          return (int64_t)(int32_t)CELL_ESRCH;
  
-@@ -410,34 +535,106 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
+@@ -410,34 +554,106 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
      }
  #else
      pthread_mutex_lock(&s->mtx);
@@ -8280,7 +8424,7 @@ index a05eeecf..8221ccc7 100644
      pthread_mutex_unlock(&s->mtx);
  #endif
  
-@@ -452,18 +649,20 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
+@@ -452,18 +668,20 @@ static int64_t sys_semaphore_wait_impl(ppu_context* ctx)
  int64_t sys_semaphore_trywait(ppu_context* ctx)
  {
      uint32_t sem_id = LV2_ARG_U32(ctx, 0);
@@ -8303,7 +8447,7 @@ index a05eeecf..8221ccc7 100644
      if (!s->active) {
          static int _n = 0; if (PS3_LOG_FIRST(_n, 6))
              fprintf(stderr, "[sem] post(id=%u) -> ESRCH: slot inactive"
-@@ -482,11 +681,16 @@ int64_t sys_semaphore_trywait(ppu_context* ctx)
+@@ -482,11 +700,16 @@ int64_t sys_semaphore_trywait(ppu_context* ctx)
      LeaveCriticalSection(&s->value_lock);
  #else
      pthread_mutex_lock(&s->mtx);
@@ -8321,7 +8465,7 @@ index a05eeecf..8221ccc7 100644
      pthread_mutex_unlock(&s->mtx);
  #endif
  
-@@ -503,6 +707,7 @@ int64_t sys_semaphore_post(ppu_context* ctx)
+@@ -503,6 +726,7 @@ int64_t sys_semaphore_post(ppu_context* ctx)
  {
      uint32_t sem_id = LV2_ARG_U32(ctx, 0);
      int32_t  count  = LV2_ARG_S32(ctx, 1);
@@ -8329,7 +8473,7 @@ index a05eeecf..8221ccc7 100644
  
      { static int _n=0; if (getenv("SEMTID") && _n < 60000)
          fprintf(stderr, "[WAKE tid=%llu] semaphore_post(sem=%u count=%d)\n",
-@@ -519,11 +724,12 @@ int64_t sys_semaphore_post(ppu_context* ctx)
+@@ -519,11 +743,12 @@ int64_t sys_semaphore_post(ppu_context* ctx)
              ppu_log_host_chain("sem3-post"); }
      }
  
@@ -8343,7 +8487,7 @@ index a05eeecf..8221ccc7 100644
          sem_report_bad_id(ctx, sem_id, "post");
          return (int64_t)(int32_t)CELL_ESRCH;
      }
-@@ -531,7 +737,7 @@ int64_t sys_semaphore_post(ppu_context* ctx)
+@@ -531,7 +756,7 @@ int64_t sys_semaphore_post(ppu_context* ctx)
      if (count <= 0)
          return (int64_t)(int32_t)CELL_EINVAL;
  
@@ -8352,7 +8496,7 @@ index a05eeecf..8221ccc7 100644
      if (!s->active)
          return (int64_t)(int32_t)CELL_ESRCH;
  
-@@ -556,15 +762,31 @@ int64_t sys_semaphore_post(ppu_context* ctx)
+@@ -556,15 +781,31 @@ int64_t sys_semaphore_post(ppu_context* ctx)
          ReleaseSemaphore(s->sem_handle, wake, NULL);
  #else
      pthread_mutex_lock(&s->mtx);
@@ -8388,7 +8532,7 @@ index a05eeecf..8221ccc7 100644
      pthread_mutex_unlock(&s->mtx);
  #endif
  
-@@ -582,10 +804,10 @@ int64_t sys_semaphore_get_value(ppu_context* ctx)
+@@ -582,10 +823,10 @@ int64_t sys_semaphore_get_value(ppu_context* ctx)
      uint32_t sem_id   = LV2_ARG_U32(ctx, 0);
      uint32_t out_addr = LV2_ARG_PTR(ctx, 1);
  

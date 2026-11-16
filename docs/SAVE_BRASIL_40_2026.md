@@ -604,3 +604,8 @@ save, que antes parava no cartão de apresentação, jogou a partida (Flamengo 4
 (`BLUS31029LB01`) e passou para o jogo de volta. Os mutex,
 variáveis de condição e filas de eventos do runtime ainda reaproveitam ids (o mutex usa a
 primeira posição livre); não há prova de travamento por eles, mas é o próximo lugar a olhar.
+
+Medido depois (15/11/2026, `PS3_SYNC_STATS=1`, uma partida da ML do boot ao fim): o PES só destrói e
+recria semáforos (662 criados, 353 destruídos). Mutex (17), variáveis de condição (17), rwlock (1)
+e filas de eventos (8) são criados no boot e nunca destruídos, então neles o reaproveitamento de id
+não acontece; ficaram como estavam.
