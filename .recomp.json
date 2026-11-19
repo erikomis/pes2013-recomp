@@ -1,0 +1,16 @@
+{
+  "$schema": "https://recomp.fyi/schema/v1.json",
+  "game": "Pro Evolution Soccer 2013",
+  "system": "PS3",
+  "type": "recomp",
+  "original": {
+    "serial": "BLUS31029",
+    "revision": "01.04"
+  },
+  "status": "released",
+  "targets": [
+    "macOS"
+  ],
+  "toolchain": "ps3recomp",
+  "notes": "Public alpha for Apple silicon Macs. Full friendly matches work; Master League, Become a Legend, online modes and long sessions have not been tested."
+}

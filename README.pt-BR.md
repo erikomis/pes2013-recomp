@@ -38,6 +38,12 @@ correções do toolkit feitas para os portes de inFAMOUS, Resistance e Deadpool.
 > legítima. Projeto de fã, sem afiliação com a Konami ou a Sony Interactive
 > Entertainment.
 
+## Metadados do projeto
+
+Os metadados do projeto para catálogos e ferramentas ficam em [`.recomp.json`](.recomp.json),
+conforme a [especificação do recomp.board](https://recomp.fyi/spec). Mantenha o arquivo
+atualizado quando mudar o estado do projeto, a versão do jogo suportada ou as plataformas de destino.
+
 ## Estado
 
 | | |

@@ -38,6 +38,12 @@ toolkit fixes made for the inFAMOUS, Resistance and Deadpool ports. See
 > their own legitimate copy. A fan project, not affiliated with Konami or Sony
 > Interactive Entertainment.
 
+## Project metadata
+
+Project metadata for directories and tools lives in [`.recomp.json`](.recomp.json),
+following the [recomp.board specification](https://recomp.fyi/spec). Keep it
+updated when the project status, supported game version or target platforms change.
+
 ## Status
 
 | | |
