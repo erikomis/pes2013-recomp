@@ -110,7 +110,7 @@ tools/run.sh > cache/boot-meu.log 2>&1
 | --- | --- |
 | `PS3_LANG=PT` | Console language (default `PT`; `pt-br` or `17` for Brazil). The first-run setup still asks for the game language |
 | `PS3_ANISO=16` | Anisotropic filtering (default 16; `0` = the game's own) |
-| `PS3_AA=fxaa`, `PS3_SHARPEN=0..1`, `PS3_DISPLAY_GAMMA` | Anti-aliasing, sharpening, gamma at present |
+| `PS3_AA=fxaa` or `smaa`, `PS3_SHARPEN=0..1`, `PS3_DISPLAY_GAMMA` | Anti-aliasing, sharpening, gamma at present |
 | `AUDIO_ELASTIC=1` | A 43 ms audio queue that waits for a late block (default; `0` = 21 ms) |
 | `PS3_AUDIO_VOLUME=0..100`, `PS3_AUDIO_MUTE=1`, `PS3_AUDIO_DEVICE=<name part>` | Host audio level, mute, output device |
 | `PS3_WINDOW_MODE=windowed\|borderless\|fullscreen`, `PS3_WINDOW_SIZE=WxH`, `PS3_DISPLAY=<n or name>`, `PS3_VSYNC=0` | The window (Cmd+F toggles fullscreen) |

@@ -30,6 +30,9 @@ Este porte só existe por causa do trabalho abaixo. Obrigado a todos.
 - **pfdtool** (flatz) — o formato PARAM.PFD com que o `tools/install_savedata.py`
   decifra o único arquivo protegido do Option File.
 - **[Tauri](https://tauri.app)** — o framework do launcher.
+- **[SMAA](https://www.iryoku.com/smaa/)** (Jorge Jimenez, Jose I. Echevarria, Belen Masia,
+  Fernando Navarro, Diego Gutierrez; MIT) — `PS3_AA=smaa`, os shaders e as texturas de consulta em
+  `third_party/smaa` do toolkit, vindos do port do Resistance 2.
 
 ## O jogo
 

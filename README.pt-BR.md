@@ -111,7 +111,7 @@ jogo em `rpcs3/` e abre o jogo. Passe ajustes como `VAR=valor` depois dele.
 | --- | --- |
 | `PS3_LANG=PT` | Idioma do console (padrão `PT`; `pt-br` ou `17` para Brasil). A configuração inicial ainda pergunta o idioma do jogo |
 | `PS3_ANISO=16` | Filtro anisotrópico (padrão 16; `0` = o do jogo) |
-| `PS3_AA=fxaa`, `PS3_SHARPEN=0..1`, `PS3_DISPLAY_GAMMA` | Antisserrilhado, nitidez, gama na apresentação |
+| `PS3_AA=fxaa` ou `smaa`, `PS3_SHARPEN=0..1`, `PS3_DISPLAY_GAMMA` | Antisserrilhado, nitidez, gama na apresentação |
 | `AUDIO_ELASTIC=1` | Fila de áudio de 43 ms que espera um bloco atrasado (padrão; `0` = 21 ms) |
 | `PS3_AUDIO_VOLUME=0..100`, `PS3_AUDIO_MUTE=1`, `PS3_AUDIO_DEVICE=<parte do nome>` | Volume, mudo e saída de som do Mac |
 | `PS3_WINDOW_MODE=windowed\|borderless\|fullscreen`, `PS3_WINDOW_SIZE=LxA`, `PS3_DISPLAY=<n ou nome>`, `PS3_VSYNC=0` | A janela (Cmd+F alterna a tela cheia) |
