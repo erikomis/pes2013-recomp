@@ -74,6 +74,8 @@ it as `VAR=value`, like `tools/run.sh`:
 | `PS3RECOMP_VK_FPS=1`, `RSX_PACE_LOG=5` | Frame rate; frame pacing every 5 s |
 | `PS3_RES_SCALE=1080p\|1440p\|4k` (or `1`..`4`) | Internal resolution: every render target that many times the PS3's 720p, supersampled to the window (default `1`) |
 | `PS3_ANISO=16` | Anisotropic filtering where the game uses mipmaps (default `16`; `0` = the game's own) |
+| `PS3_AA=smaa` | SMAA 1x on the frame, at the internal resolution |
+| `PS3_SHARPEN=0..1`, `PS3_VIBRANCE=-1..1`, `PS3_CONTRAST=0.5..1.5` | AMD CAS sharpening, vibrance, contrast (one pass) |
 | `PS3_VSYNC=1` | Wait for the display (FIFO); default is MAILBOX, which never blocks and does not tear |
 | `VK_DRAW_BATCH=0` | One submit and wait per draw, as before (default `1`; without it, about half the frame rate) |
 | `VK_DRAW_BATCH_ASYNC=0`, `PES_SPLIT_PRESENT=0` | Batches and presents that wait for the GPU, as before |
@@ -99,8 +101,8 @@ Closing the window ends the game, after a save in progress finishes.
   the FIFO overrun that must persist before it is recycled, GETLLAR polls that
   park instead of spinning, the DualSense match effects, the save-busy count the
   quit path waits on, and the rest of the macOS patch where it is not Metal.
-- **Metal-only features are not there yet:** MetalFX, the picture filters and
-  LUT, SMAA/FXAA/sharpening, texture packs
+- **Metal-only features are not there yet:** MetalFX, FXAA, the colour LUT
+  and grain, texture packs
   (`PS3_MODS`: the HD pitch, the 2026 faces and kits), the native on-screen
   keyboard prompt and the audio device choice. The Vulkan backend would need
   each of them.
@@ -141,3 +143,19 @@ Closing the window ends the game, after a save in progress finishes.
   draw batches in two slots, so a flush no longer waits for the GPU (it held
   the FIFO thread for the frame's whole GPU time: 30 fps at 1440p), and a
   MAILBOX swapchain instead of FIFO (each acquire waited for a vblank).
+- SMAA and CAS (`PS3_AA=smaa PS3_SHARPEN=0.3`), drawn with the engine
+  backend's own pipelines: 57-60 fps at 1x and at 4K internal, edges smoothed,
+  no artefacts in matches.
+
+## Temporal upscalers (DLSS, FSR 3/4) and frame generation
+
+Not here, and not a switch away. DLSS (any version), FSR 3.1 and FSR 4 are
+temporal: they need per-pixel motion vectors, the frame's depth and a sub-pixel
+jitter in the game's projection, none of which the PS3's frame has. The God of
+War: Ascension port (rigaz29/Ascension-R) has DLSS and FSR 4.1 because it
+reverse-engineered that game's renderer: its camera matrices, its motion-blur
+velocity buffer, where the HUD starts. PES 2013 would need the same study of its
+own renderer. FSR 4's model also runs on AMD Radeon only (on NVIDIA the FSR SDK
+falls back to FSR 3.1), and DLSS 5 was announced for RTX 50 cards. Rendering at
+4K internal resolution and reducing it to the screen gives most of what an
+upscaler would here.

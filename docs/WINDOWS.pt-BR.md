@@ -74,6 +74,8 @@ depois, como `VAR=valor`, igual ao `tools/run.sh`:
 | `PS3RECOMP_VK_FPS=1`, `RSX_PACE_LOG=5` | Taxa de quadros; ritmo dos quadros a cada 5 s |
 | `PS3_RES_SCALE=1080p\|1440p\|4k` (ou `1`..`4`) | Resolução interna: cada alvo de renderização esse tanto de vezes os 720p do PS3, reduzido para a janela (supersampling; padrão `1`) |
 | `PS3_ANISO=16` | Filtro anisotrópico onde o jogo usa mipmaps (padrão `16`; `0` = o do jogo) |
+| `PS3_AA=smaa` | SMAA 1x no quadro, na resolução interna |
+| `PS3_SHARPEN=0..1`, `PS3_VIBRANCE=-1..1`, `PS3_CONTRAST=0.5..1.5` | Nitidez AMD CAS, vibrância, contraste (um passe só) |
 | `PS3_VSYNC=1` | Espera o monitor (FIFO); o padrão é MAILBOX, que nunca bloqueia e não rasga a imagem |
 | `VK_DRAW_BATCH=0` | Um envio e uma espera por desenho, como antes (padrão `1`; sem ele, cerca de metade da taxa de quadros) |
 | `VK_DRAW_BATCH_ASYNC=0`, `PES_SPLIT_PRESENT=0` | Lotes e apresentações que esperam a GPU, como antes |
@@ -101,8 +103,8 @@ depois de terminar um save em andamento.
   antes de reciclar, os GETLLAR em espera que dormem em vez de girar, os efeitos
   de partida no DualSense, a contagem de saves em andamento que a saída espera, e
   o resto do patch do macOS onde não é Metal.
-- **O que é só do Metal ainda não existe aqui:** MetalFX, os filtros de imagem e
-  LUT, SMAA/FXAA/nitidez, pacotes de
+- **O que é só do Metal ainda não existe aqui:** MetalFX, FXAA, a LUT de cor e
+  o grão, pacotes de
   texturas (`PS3_MODS`: o gramado HD, as faces e uniformes de 2026), o teclado
   virtual nativo e a escolha do dispositivo de áudio. O backend Vulkan precisaria
   de cada um deles.
@@ -146,3 +148,19 @@ depois de terminar um save em andamento.
   prendia a thread do FIFO pelo tempo de GPU do quadro inteiro: 30 fps em
   1440p), e o swapchain em MAILBOX em vez de FIFO (cada aquisição esperava um
   vblank).
+- SMAA e CAS (`PS3_AA=smaa PS3_SHARPEN=0.3`), desenhados com os próprios
+  pipelines do motor: 57-60 fps em 1x e em 4K interno, bordas suavizadas, sem
+  artefatos nas partidas.
+
+## Upscalers temporais (DLSS, FSR 3/4) e geração de quadros
+
+Não estão aqui, e não é questão de ligar uma opção. DLSS (qualquer versão), FSR
+3.1 e FSR 4 são temporais: precisam de vetores de movimento por pixel, da
+profundidade do quadro e de um jitter na projeção do jogo, e o quadro do PS3 não
+tem nada disso. O port do God of War: Ascension (rigaz29/Ascension-R) tem DLSS e
+FSR 4.1 porque estudou o renderizador daquele jogo: as matrizes de câmera, o
+buffer de velocidade do motion blur, onde começa o HUD. O PES 2013 precisaria do
+mesmo estudo do renderizador dele. O modelo do FSR 4 também só roda em AMD
+Radeon (em NVIDIA o SDK do FSR cai para o FSR 3.1), e o DLSS 5 foi anunciado
+para a série RTX 50. Renderizar em 4K interno e reduzir para a tela já dá o
+principal do que um upscaler daria aqui.
