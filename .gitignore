@@ -21,6 +21,8 @@ cache_lift.log
 launcher/node_modules
 launcher/dist
 launcher/src-tauri/target
+# Python virtual environment (tools/windows/install_deps.ps1)
+.venv/
 # Python caches, local notes and third-party text that came with game data
 __pycache__/
 *.pyc
@@ -30,3 +32,5 @@ Instruções de instalação do Option File e Datapack.txt
 sources/
 gamedata/
 launcher/stage/
+# This machine's settings for the Windows scripts
+tools/windows/local.ps1
