@@ -1,0 +1,2 @@
+# Byte-exact: the toolkit has CRLF files, and the patch carries their CRs.
+patches/ps3recomp-e85647a-pes13-windows.patch -text
