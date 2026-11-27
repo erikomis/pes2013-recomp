@@ -78,7 +78,7 @@ it as `VAR=value`, like `tools/run.sh`:
 | `PS3_SHARPEN=0..1`, `PS3_VIBRANCE=-1..1`, `PS3_CONTRAST=0.5..1.5` | AMD CAS sharpening, vibrance, contrast (one pass) |
 | `PS3_VSYNC=1` | Wait for the display (FIFO); default is MAILBOX, which never blocks and does not tear |
 | `VK_DRAW_BATCH=0` | One submit and wait per draw, as before (default `1`; without it, about half the frame rate) |
-| `VK_DRAW_BATCH_ASYNC=0`, `PES_SPLIT_PRESENT=0` | Batches and presents that wait for the GPU, as before |
+| `VK_DRAW_BATCH_ASYNC=1`, `PES_SPLIT_PRESENT=1` | Batches and presents that do not wait for the GPU. Off by default: with them on, players' kits broke in about half the matches at 4K internal |
 | `PES_EVENTS=0`, `PS3_PAD_SPEAKER=0`, `PS3_PAD_LIGHT=#rrggbb` | The DualSense match effects, as on macOS |
 | `PS3_VERBOSE=1` | The full runtime log (very large) |
 
@@ -139,13 +139,19 @@ Closing the window ends the game, after a save in progress finishes.
 - Internal resolution (`PS3_RES_SCALE`): matches at 1440p and 4K internal
   render correctly (players, kits, stands, crowd, shadows, HUD, replays with
   depth of field) on a 1920x1080 screen, at 60 fps (4K: p50 16.7 ms, p95
-  18.7-23 ms, GPU about 40%). That took two changes to the Vulkan presenter:
-  draw batches in two slots, so a flush no longer waits for the GPU (it held
-  the FIFO thread for the frame's whole GPU time: 30 fps at 1440p), and a
-  MAILBOX swapchain instead of FIFO (each acquire waited for a vblank).
+  18.7-23 ms, GPU about 40%). The change that mattered was a MAILBOX
+  swapchain instead of FIFO (each acquire waited for a vblank).
+- Broken kits at 4K internal: with draw batches in two slots
+  (`VK_DRAW_BATCH_ASYNC`) and the split present (`PES_SPLIT_PRESENT`) on,
+  about half the matches showed players with parts of their kit missing or
+  wrong: another team's colours on the sleeves, black or see-through torsos,
+  shorts and legs missing. With both off: none in four matches, and the match
+  itself still at 58-60 fps at 4K with SMAA. Both are now off by default.
+  Nothing the game reads waits on them, so they probably expose a timing race
+  elsewhere (the game builds kits on the SPUs) rather than cause one; that is
+  still open.
 - SMAA and CAS (`PS3_AA=smaa PS3_SHARPEN=0.3`), drawn with the engine
-  backend's own pipelines: 57-60 fps at 1x and at 4K internal, edges smoothed,
-  no artefacts in matches.
+  backend's own pipelines: 57-60 fps at 1x and at 4K internal, edges smoothed.
 
 ## Temporal upscalers (DLSS, FSR 3/4) and frame generation
 

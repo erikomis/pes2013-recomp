@@ -78,7 +78,7 @@ depois, como `VAR=valor`, igual ao `tools/run.sh`:
 | `PS3_SHARPEN=0..1`, `PS3_VIBRANCE=-1..1`, `PS3_CONTRAST=0.5..1.5` | Nitidez AMD CAS, vibrância, contraste (um passe só) |
 | `PS3_VSYNC=1` | Espera o monitor (FIFO); o padrão é MAILBOX, que nunca bloqueia e não rasga a imagem |
 | `VK_DRAW_BATCH=0` | Um envio e uma espera por desenho, como antes (padrão `1`; sem ele, cerca de metade da taxa de quadros) |
-| `VK_DRAW_BATCH_ASYNC=0`, `PES_SPLIT_PRESENT=0` | Lotes e apresentações que esperam a GPU, como antes |
+| `VK_DRAW_BATCH_ASYNC=1`, `PES_SPLIT_PRESENT=1` | Lotes e apresentações que não esperam a GPU. Desligados por padrão: com eles, os uniformes quebravam em cerca de metade das partidas em 4K interno |
 | `PES_EVENTS=0`, `PS3_PAD_SPEAKER=0`, `PS3_PAD_LIGHT=#rrggbb` | Os efeitos de partida no DualSense, como no macOS |
 | `PS3_VERBOSE=1` | O log completo do runtime (muito grande) |
 
@@ -143,14 +143,19 @@ depois de terminar um save em andamento.
 - Resolução interna (`PS3_RES_SCALE`): partidas em 1440p e 4K internos saem
   corretas (jogadores, uniformes, arquibancada, torcida, sombras, HUD, replays
   com profundidade de campo) numa tela 1920x1080, a 60 fps (4K: p50 16,7 ms,
-  p95 18,7-23 ms, GPU em ~40%). Para isso o Vulkan mudou em dois pontos: os
-  lotes de desenho em dois slots, para um envio não esperar a GPU (isso
-  prendia a thread do FIFO pelo tempo de GPU do quadro inteiro: 30 fps em
-  1440p), e o swapchain em MAILBOX em vez de FIFO (cada aquisição esperava um
-  vblank).
+  p95 18,7-23 ms, GPU em ~40%). O que fez diferença foi o swapchain em
+  MAILBOX em vez de FIFO (cada aquisição esperava um vblank).
+- Uniformes quebrados em 4K interno: com os lotes em dois slots
+  (`VK_DRAW_BATCH_ASYNC`) e a apresentação dividida (`PES_SPLIT_PRESENT`)
+  ligados, cerca de metade das partidas mostrava jogadores com partes do
+  uniforme faltando ou erradas: cores de outro time nas mangas, tronco preto ou
+  transparente, calção e pernas sumindo. Com os dois desligados: nenhuma em
+  quatro partidas, e a partida ainda a 58-60 fps em 4K com SMAA. Os dois agora
+  vêm desligados. Nada que o jogo lê espera por eles, então provavelmente
+  expõem uma corrida de tempo em outro lugar (o jogo monta os uniformes nas
+  SPUs) em vez de causá-la; isso continua em aberto.
 - SMAA e CAS (`PS3_AA=smaa PS3_SHARPEN=0.3`), desenhados com os próprios
-  pipelines do motor: 57-60 fps em 1x e em 4K interno, bordas suavizadas, sem
-  artefatos nas partidas.
+  pipelines do motor: 57-60 fps em 1x e em 4K interno, bordas suavizadas.
 
 ## Upscalers temporais (DLSS, FSR 3/4) e geração de quadros
 

@@ -8041,7 +8041,7 @@ index af381a95..a29fa9c7 100644
                            rsx_vp_input_analysis* analysis);
  
 diff --git a/libs/video/rsx_vulkan_backend.c b/libs/video/rsx_vulkan_backend.c
-index 6f325854..5dd1e801 100644
+index 6f325854..d836bf7b 100644
 --- a/libs/video/rsx_vulkan_backend.c
 +++ b/libs/video/rsx_vulkan_backend.c
 @@ -63,6 +63,9 @@
@@ -8662,11 +8662,16 @@ index 6f325854..5dd1e801 100644
      VkSampler smp;
      if (pvkCreateSampler(s_vk.device, &sci, NULL, &smp) != VK_SUCCESS) return s_vk.sampler;
      s_esamp[s_esamp_count].key = key;
-@@ -4290,6 +4557,76 @@ static struct {
+@@ -4290,6 +4557,81 @@ static struct {
      unsigned long long draws, flushes;
  } s_eb = { .on = -1 };
  
-+/* Two batch slots (VK_DRAW_BATCH_ASYNC, on with batching; =0 turns it off).
++/* Two batch slots (VK_DRAW_BATCH_ASYNC=1, off by default: with it on, PES 2013
++ * at 4K internal lost parts of players' kits in about half the matches --
++ * another team's colours on the sleeves, black or see-through torsos -- and in
++ * none of four with it and PES_SPLIT_PRESENT off. Nothing the guest reads
++ * depends on GPU completion other than the synchronous read-backs, so this
++ * likely exposes a timing race elsewhere rather than causing one.)
 + * A flush used to submit and wait, because the rings, the descriptor pool and
 + * the command buffer were reused right after it: the FIFO thread then sat out
 + * every batch's GPU time, the whole frame's at a raised internal resolution.
@@ -8700,7 +8705,7 @@ index 6f325854..5dd1e801 100644
 +static void vk_ebs_init(void)
 +{
 +    const char* e = getenv("VK_DRAW_BATCH_ASYNC");
-+    if (e && e[0] == '0') return;
++    if (!(e && e[0] == '1')) return;
 +    s_ebs[0].cmd = s_vk.cmd; s_ebs[0].fence = s_vk.fence;
 +    s_ebs[0].vb = s_eb.vb; s_ebs[0].ib = s_eb.ib; s_ebs[0].ub = s_eb.ub; s_ebs[0].sb = s_eb.sb;
 +    s_ebs[0].pool = s_eb.pool;
@@ -8739,7 +8744,7 @@ index 6f325854..5dd1e801 100644
  static int vk_eb_on(void)
  {
      if (s_eb.on >= 0) return s_eb.on;
-@@ -4319,6 +4656,7 @@ static int vk_eb_on(void)
+@@ -4319,6 +4661,7 @@ static int vk_eb_on(void)
      }
      VK_LOG("draw batching: on (up to %u draws per submission)\n", s_eb.max_draws);
      s_eb.on = 1;
@@ -8747,7 +8752,7 @@ index 6f325854..5dd1e801 100644
      return 1;
  }
  
-@@ -4327,6 +4665,23 @@ static int vk_eb_on(void)
+@@ -4327,6 +4670,23 @@ static int vk_eb_on(void)
  static void vk_eb_release(void)
  {
      if (s_eb_pending) vk_eng_flush();
@@ -8771,7 +8776,7 @@ index 6f325854..5dd1e801 100644
      vk_destroy_buffer(&s_eb.vb);
      vk_destroy_buffer(&s_eb.ib);
      vk_destroy_buffer(&s_eb.ub);
-@@ -4374,9 +4729,33 @@ static void vk_eng_flush(void)
+@@ -4374,9 +4734,33 @@ static void vk_eng_flush(void)
  {
      if (!s_eb_pending) return;
      s_eb_pending = 0;               /* first: the submit below must not re-enter */
@@ -8805,7 +8810,7 @@ index 6f325854..5dd1e801 100644
      if ((++s_eb.flushes & 0x3FFFu) == 0)
          VK_LOG("draw batching: %llu draws in %llu submissions\n", s_eb.draws, s_eb.flushes);
  }
-@@ -4530,9 +4909,6 @@ static void vk_eng_draw(void* user, rsx_topology topology, const void* vertices,
+@@ -4530,9 +4914,6 @@ static void vk_eng_draw(void* user, rsx_topology topology, const void* vertices,
          if (ibytes) memcpy((u8*)s_eb.ib.ptr + ioff, indices, (size_t)ibytes);
          vbuf = s_eb.vb.buf; ibuf = s_eb.ib.buf;
          if (!s_eb_pending && vk_begin()) return;
@@ -8815,7 +8820,7 @@ index 6f325854..5dd1e801 100644
      } else {
          if (s_eb_pending) vk_eng_flush();
          if (vk_ensure_vertex_buffer(vbytes)) return;
-@@ -4549,10 +4925,10 @@ static void vk_eng_draw(void* user, rsx_topology topology, const void* vertices,
+@@ -4549,10 +4930,10 @@ static void vk_eng_draw(void* user, rsx_topology topology, const void* vertices,
          if (!set) return;
          if (vk_begin()) return;
      }
@@ -8830,7 +8835,7 @@ index 6f325854..5dd1e801 100644
      VkRenderPassBeginInfo rbi = { .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
                                    .renderPass = rp, .framebuffer = fb,
                                    .renderArea = { { 0, 0 }, { w, h } } };
-@@ -4589,11 +4965,384 @@ static void vk_eng_draw(void* user, rsx_topology topology, const void* vertices,
+@@ -4589,11 +4970,384 @@ static void vk_eng_draw(void* user, rsx_topology topology, const void* vertices,
          pvkCmdDraw(s_vk.cmd, vertex_count, 1, 0, 0);
      }
      pvkCmdEndRenderPass(s_vk.cmd);
@@ -9216,7 +9221,7 @@ index 6f325854..5dd1e801 100644
  static const rsx_draw_backend s_vk_engine_backend = {
      .user                 = NULL,
      .init                 = vk_eng_init,
-@@ -4608,6 +5357,7 @@ static const rsx_draw_backend s_vk_engine_backend = {
+@@ -4608,6 +5362,7 @@ static const rsx_draw_backend s_vk_engine_backend = {
      .depth_target_create  = vk_eng_depth_target_create,
      .depth_target_release = vk_eng_depth_target_release,
      .depth_snapshot       = vk_eng_depth_snapshot,
@@ -9224,7 +9229,7 @@ index 6f325854..5dd1e801 100644
      .color_snapshot       = vk_eng_color_snapshot,
      .pipeline_create      = vk_eng_pipeline_create,
      .pipeline_release     = vk_eng_pipeline_release,
-@@ -4650,6 +5400,45 @@ static rsx_backend s_vulkan_backend = {
+@@ -4650,6 +5405,45 @@ static rsx_backend s_vulkan_backend = {
  /* ---------------------------------------------------------------------------
   * Public entry points
   * -------------------------------------------------------------------------*/
@@ -9270,7 +9275,7 @@ index 6f325854..5dd1e801 100644
  static int vk_init_all(u32 width, u32 height, const char* title)
  {
      pthread_mutex_init(&s_vk.queue_mu, NULL);
-@@ -4729,6 +5518,13 @@ static int vk_init_all(u32 width, u32 height, const char* title)
+@@ -4729,6 +5523,13 @@ static int vk_init_all(u32 width, u32 height, const char* title)
       * have their own); without it every target takes target A's. */
      want.independentBlend = have.independentBlend;
      s_vk.indep_blend_ok = have.independentBlend ? 1 : 0;
@@ -9284,7 +9289,7 @@ index 6f325854..5dd1e801 100644
      VkDeviceCreateInfo dci = { .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
                                 .queueCreateInfoCount = 1, .pQueueCreateInfos = &qci,
                                 .enabledExtensionCount = s_vk.windowed ? 1u : 0u,
-@@ -4773,6 +5569,7 @@ static int vk_init_all(u32 width, u32 height, const char* title)
+@@ -4773,6 +5574,7 @@ static int vk_init_all(u32 width, u32 height, const char* title)
                          VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, s_vk.depth_aspect)) return -1;
      if (vk_create_host_buffer(&s_vk.readback, (VkDeviceSize)s_vk.width * s_vk.height * 4u,
                                VK_BUFFER_USAGE_TRANSFER_DST_BIT)) return -1;
@@ -9292,7 +9297,7 @@ index 6f325854..5dd1e801 100644
      if (vk_create_render_pass()) return -1;
      if (vk_create_pipeline_objects()) return -1;
      if (vk_guest_init()) {
-@@ -4885,6 +5682,7 @@ void rsx_vulkan_backend_shutdown(void)
+@@ -4885,6 +5687,7 @@ void rsx_vulkan_backend_shutdown(void)
          vk_destroy_image(&s_vk.dummy);
          vk_destroy_image(&s_vk.depth);
          vk_destroy_image(&s_vk.color);

@@ -295,13 +295,14 @@ static void spike_note(unsigned long long t0, unsigned long long t1)
  * the next flip comes, or after 30 ms without one. The GPU then draws frame N while
  * this thread walks frame N+1, where a whole present used to wait for the GPU
  * on every flip -- most of the frame at a raised internal resolution.
- * PES_SPLIT_PRESENT=0 presents in one piece, as before. */
+ * Opt-in (PES_SPLIT_PRESENT=1): with it and VK_DRAW_BATCH_ASYNC on, kits broke
+ * in about half the matches at 4K internal (see rsx_vulkan_backend.c). */
 static int s_present_pending;
 static unsigned long long s_present_begin_us;
 static int split_present_on(void)
 {
     static int on = -1;
-    if (on < 0) { const char* e = getenv("PES_SPLIT_PRESENT"); on = !(e && e[0] == '0'); }
+    if (on < 0) { const char* e = getenv("PES_SPLIT_PRESENT"); on = e && e[0] == '1'; }
     return on;
 }
 static void present_finish_pending(void)
