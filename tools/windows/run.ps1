@@ -129,6 +129,9 @@ Set-Default 'PS3RECOMP_VK_GUEST_PROGRAMS' '1'
 # wait per draw: the training ground went from about 30 fps (FIFO drain 30-90 ms
 # a frame) to 60 (2026-11-27, RTX 4070 Ti SUPER). VK_DRAW_BATCH=0 for the old path.
 Set-Default 'VK_DRAW_BATCH' '1'
+# Anisotropic filtering where the game minifies through mipmaps (the pitch at a
+# distance), as the macOS build's default. PS3_ANISO=0 restores the game's own.
+Set-Default 'PS3_ANISO' '16'
 # HLSL -> SPIR-V translations kept on disk: a shader seen once is not
 # translated again on the RSX thread in a later session.
 Set-Default 'PS3RECOMP_SPIRV_CACHE' (Join-Path $root 'cache\spirv')

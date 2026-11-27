@@ -72,7 +72,11 @@ it as `VAR=value`, like `tools/run.sh`:
 | `PS3RECOMP_VK_FULLSCREEN=1` | Full screen |
 | `PS3RECOMP_VK_DEVICE=<n>` | Which GPU, when there is more than one |
 | `PS3RECOMP_VK_FPS=1`, `RSX_PACE_LOG=5` | Frame rate; frame pacing every 5 s |
+| `PS3_RES_SCALE=1080p\|1440p\|4k` (or `1`..`4`) | Internal resolution: every render target that many times the PS3's 720p, supersampled to the window (default `1`) |
+| `PS3_ANISO=16` | Anisotropic filtering where the game uses mipmaps (default `16`; `0` = the game's own) |
+| `PS3_VSYNC=1` | Wait for the display (FIFO); default is MAILBOX, which never blocks and does not tear |
 | `VK_DRAW_BATCH=0` | One submit and wait per draw, as before (default `1`; without it, about half the frame rate) |
+| `VK_DRAW_BATCH_ASYNC=0`, `PES_SPLIT_PRESENT=0` | Batches and presents that wait for the GPU, as before |
 | `PES_EVENTS=0`, `PS3_PAD_SPEAKER=0`, `PS3_PAD_LIGHT=#rrggbb` | The DualSense match effects, as on macOS |
 | `PS3_VERBOSE=1` | The full runtime log (very large) |
 
@@ -96,7 +100,7 @@ Closing the window ends the game, after a save in progress finishes.
   park instead of spinning, the DualSense match effects, the save-busy count the
   quit path waits on, and the rest of the macOS patch where it is not Metal.
 - **Metal-only features are not there yet:** MetalFX, the picture filters and
-  LUT, SMAA/FXAA/sharpening, internal resolution (`PS3_RES_SCALE`), texture packs
+  LUT, SMAA/FXAA/sharpening, texture packs
   (`PS3_MODS`: the HD pitch, the 2026 faces and kits), the native on-screen
   keyboard prompt and the audio device choice. The Vulkan backend would need
   each of them.
@@ -130,3 +134,10 @@ Closing the window ends the game, after a save in progress finishes.
   drain taking 30-90 ms a frame with one submit and wait per draw) to 59.9 fps
   (p50 16.6 ms, p95 20 ms), same picture. Audio in the same runs: 187.5
   blocks/s, 0% silent, no underruns.
+- Internal resolution (`PS3_RES_SCALE`): matches at 1440p and 4K internal
+  render correctly (players, kits, stands, crowd, shadows, HUD, replays with
+  depth of field) on a 1920x1080 screen, at 60 fps (4K: p50 16.7 ms, p95
+  18.7-23 ms, GPU about 40%). That took two changes to the Vulkan presenter:
+  draw batches in two slots, so a flush no longer waits for the GPU (it held
+  the FIFO thread for the frame's whole GPU time: 30 fps at 1440p), and a
+  MAILBOX swapchain instead of FIFO (each acquire waited for a vblank).

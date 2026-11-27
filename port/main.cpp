@@ -136,6 +136,11 @@ extern "C" int  rsx_vulkan_backend_pump_messages(void);
 #  define rsx_backend_present rsx_vulkan_backend_present
 #  define rsx_backend_pump    rsx_vulkan_backend_pump_messages
 #  define RSX_BACKEND_NAME    "Vulkan"
+/* The present in two halves (rsx_vulkan_backend.h): begin submits the copy of
+ * the flipped surface and returns; finish waits for it and shows the frame. */
+extern "C" void rsx_vulkan_backend_present_begin(void);
+extern "C" void rsx_vulkan_backend_present_finish(void);
+#  define PES_SPLIT_PRESENT 1
 #elif defined(_WIN32)
 extern "C" int  rsx_d3d12_backend_init(uint32_t w, uint32_t h, const char* title);
 extern "C" void rsx_d3d12_backend_present(void);
@@ -284,9 +289,50 @@ static void spike_note(unsigned long long t0, unsigned long long t1)
     s_spk_drain = s_spk_drain_max = s_spk_present = s_spk_pump = s_spk_calls = 0;
 }
 
+#ifdef PES_SPLIT_PRESENT
+/* Vulkan: a guest flip starts its present and the frame clock goes on draining
+ * the next frame's commands; the present is finished (waited for, shown) when
+ * the next flip comes, or after 30 ms without one. The GPU then draws frame N while
+ * this thread walks frame N+1, where a whole present used to wait for the GPU
+ * on every flip -- most of the frame at a raised internal resolution.
+ * PES_SPLIT_PRESENT=0 presents in one piece, as before. */
+static int s_present_pending;
+static unsigned long long s_present_begin_us;
+static int split_present_on(void)
+{
+    static int on = -1;
+    if (on < 0) { const char* e = getenv("PES_SPLIT_PRESENT"); on = !(e && e[0] == '0'); }
+    return on;
+}
+static void present_finish_pending(void)
+{
+    if (!s_present_pending) return;
+    s_present_pending = 0;
+    const unsigned long long tp = mono_us();
+    rsx_vulkan_backend_present_finish();
+    s_spk_present += mono_us() - tp;
+}
+/* No flip for 30 ms (a load, a pause): show what is pending anyway. */
+static void present_finish_stale(unsigned long long now)
+{
+    if (s_present_pending && now - s_present_begin_us >= 30000) present_finish_pending();
+}
+#else
+static void present_finish_pending(void) {}
+static void present_finish_stale(unsigned long long) {}
+#endif
+
 static void present_guest_frame(void)
 {
     const unsigned long long t0 = mono_us();
+#ifdef PES_SPLIT_PRESENT
+    if (split_present_on()) {
+        present_finish_pending();
+        rsx_vulkan_backend_present_begin();
+        s_present_pending = 1;
+        s_present_begin_us = mono_us();
+    } else
+#endif
     rsx_backend_present();
     pace_note(t0, mono_us());
     spike_note(t0, mono_us());
@@ -587,6 +633,7 @@ static DWORD WINAPI frame_clock(LPVOID)
             const int pump_due = now - last_pump >= 4000;
             if (pump_due) {
                 last_pump = now;
+                present_finish_stale(now);
                 const unsigned long long tp = mono_us();
                 const int pumped = rsx_backend_pump();
                 s_spk_pump += mono_us() - tp;

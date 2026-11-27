@@ -72,7 +72,11 @@ depois, como `VAR=valor`, igual ao `tools/run.sh`:
 | `PS3RECOMP_VK_FULLSCREEN=1` | Tela cheia |
 | `PS3RECOMP_VK_DEVICE=<n>` | Qual GPU, quando há mais de uma |
 | `PS3RECOMP_VK_FPS=1`, `RSX_PACE_LOG=5` | Taxa de quadros; ritmo dos quadros a cada 5 s |
+| `PS3_RES_SCALE=1080p\|1440p\|4k` (ou `1`..`4`) | Resolução interna: cada alvo de renderização esse tanto de vezes os 720p do PS3, reduzido para a janela (supersampling; padrão `1`) |
+| `PS3_ANISO=16` | Filtro anisotrópico onde o jogo usa mipmaps (padrão `16`; `0` = o do jogo) |
+| `PS3_VSYNC=1` | Espera o monitor (FIFO); o padrão é MAILBOX, que nunca bloqueia e não rasga a imagem |
 | `VK_DRAW_BATCH=0` | Um envio e uma espera por desenho, como antes (padrão `1`; sem ele, cerca de metade da taxa de quadros) |
+| `VK_DRAW_BATCH_ASYNC=0`, `PES_SPLIT_PRESENT=0` | Lotes e apresentações que esperam a GPU, como antes |
 | `PES_EVENTS=0`, `PS3_PAD_SPEAKER=0`, `PS3_PAD_LIGHT=#rrggbb` | Os efeitos de partida no DualSense, como no macOS |
 | `PS3_VERBOSE=1` | O log completo do runtime (muito grande) |
 
@@ -98,7 +102,7 @@ depois de terminar um save em andamento.
   de partida no DualSense, a contagem de saves em andamento que a saída espera, e
   o resto do patch do macOS onde não é Metal.
 - **O que é só do Metal ainda não existe aqui:** MetalFX, os filtros de imagem e
-  LUT, SMAA/FXAA/nitidez, resolução interna (`PS3_RES_SCALE`), pacotes de
+  LUT, SMAA/FXAA/nitidez, pacotes de
   texturas (`PS3_MODS`: o gramado HD, as faces e uniformes de 2026), o teclado
   virtual nativo e a escolha do dispositivo de áudio. O backend Vulkan precisaria
   de cada um deles.
@@ -134,3 +138,11 @@ depois de terminar um save em andamento.
   quadro com um envio e uma espera por desenho) para 59,9 fps (p50 16,6 ms, p95
   20 ms), com a mesma imagem. Áudio nas mesmas execuções: 187,5 blocos/s, 0% de
   silêncio, nenhum underrun.
+- Resolução interna (`PS3_RES_SCALE`): partidas em 1440p e 4K internos saem
+  corretas (jogadores, uniformes, arquibancada, torcida, sombras, HUD, replays
+  com profundidade de campo) numa tela 1920x1080, a 60 fps (4K: p50 16,7 ms,
+  p95 18,7-23 ms, GPU em ~40%). Para isso o Vulkan mudou em dois pontos: os
+  lotes de desenho em dois slots, para um envio não esperar a GPU (isso
+  prendia a thread do FIFO pelo tempo de GPU do quadro inteiro: 30 fps em
+  1440p), e o swapchain em MAILBOX em vez de FIFO (cada aquisição esperava um
+  vblank).
