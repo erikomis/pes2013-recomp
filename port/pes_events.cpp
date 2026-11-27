@@ -21,8 +21,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <pthread.h>
-#include <unistd.h>
+#include <thread>
 
 extern "C" uint8_t* vm_base;
 extern "C" void ps3_pad_event(int kind);
@@ -53,9 +52,9 @@ void* loop(void*)
     double moved = now_s();
     bool live = false, stopped_logged = false;
     unsigned whistled = 0;   // bit per entry of ends[]
-    while (!vm_base) usleep(200000);
+    while (!vm_base) std::this_thread::sleep_for(std::chrono::milliseconds(200));
     for (;;) {
-        usleep(100000);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
         const uint16_t h = rd16(kHome), a = rd16(kAway);
         const uint32_t c = rd32(kClock);
         const double t = now_s();
@@ -99,8 +98,7 @@ struct Start {
     {
         const char* e = getenv("PES_EVENTS");
         if (e && e[0] == '0') return;
-        pthread_t th;
-        if (pthread_create(&th, nullptr, loop, nullptr) == 0) pthread_detach(th);
+        std::thread(loop, nullptr).detach();
     }
 } s_start;
 

@@ -27,7 +27,9 @@ def main():
             names.append(f"func_{int(line, 16):08X}")
     found = {n: 0 for n in names}
     for path in sorted(Path(a.recomp_dir).glob("ppu_recomp_*.cpp")):
-        text = path.read_text(encoding="utf-8")
+        # surrogateescape: a lift written in another encoding (Python on Windows
+        # writes cp1252 unless PYTHONUTF8=1) round-trips byte for byte.
+        text = path.read_text(encoding="utf-8", errors="surrogateescape")
         new = text
         for n in names:
             pat = re.compile(rf"^(?:__attribute__\(\(weak\)\) )?void {n}\(ppu_context\* ctx\) {{", re.M)
@@ -35,7 +37,8 @@ def main():
             found[n] += len(hits)
             new = pat.sub(f"__attribute__((weak)) void {n}(ppu_context* ctx) {{", new)
         if new != text:
-            path.write_text(new, encoding="utf-8")
+            with open(path, "w", encoding="utf-8", errors="surrogateescape", newline="") as f:
+                f.write(new)
             print(f"{path.name}: weakened")
     bad = {n: c for n, c in found.items() if c != 1}
     if bad:

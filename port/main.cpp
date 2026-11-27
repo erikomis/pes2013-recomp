@@ -23,15 +23,16 @@
  * shape for that. It was copied faithfully, comments and all. If a pacing bug
  * is fixed in one of the two, look at the other.
  *
- * This builds on Windows, macOS and Linux. CI builds and runs it against the
- * boot smoke title on the last two, and compile-checks it against clang-cl on
- * the first (tools/check_ppu_scaffold.py).
+ * This builds on Windows, macOS and Linux. On Windows the PES 2013 port builds
+ * with clang-cl and the Vulkan backend (tools/windows/build.ps1).
  */
 
 /* The lifter's generated header, which declares ppu_context and the function
  * table. It comes first: everything below is written against that struct. */
 #include <algorithm>
+#ifndef _WIN32
 #include <pthread.h>
+#endif
 #include <time.h>
 #include "ppu_recomp.h"
 
@@ -120,11 +121,22 @@ unsigned cellGcm_flip_request_count(void);
 /* ---------------------------------------------------------------------------
  * RSX present backend
  * -----------------------------------------------------------------------*/
-/* D3D12 on Windows, Metal on Apple, and the null backend's headless software
- * path anywhere else -- the same selection runtime/host/host_posix.c and the
- * toolkit's boot harness make. All three expose the same three entry points,
- * so the frame clock below is backend-agnostic. */
-#if defined(_WIN32)
+/* Vulkan on Windows (built with -DPS3RECOMP_RSX_VULKAN=ON, as
+ * tools/windows/build.ps1 does), D3D12 on Windows without it, Metal on Apple,
+ * and the null backend's headless software path anywhere else. All of them
+ * expose the same three entry points, so the frame clock below is
+ * backend-agnostic. D3D12 does not run the shared register-file draw engine
+ * this title needs (the screen stays black), so a Windows build without Vulkan
+ * only boots. */
+#if defined(_WIN32) && defined(PS3RECOMP_RSX_VULKAN)
+extern "C" int  rsx_vulkan_backend_init(uint32_t w, uint32_t h, const char* title);
+extern "C" void rsx_vulkan_backend_present(void);
+extern "C" int  rsx_vulkan_backend_pump_messages(void);
+#  define rsx_backend_init    rsx_vulkan_backend_init
+#  define rsx_backend_present rsx_vulkan_backend_present
+#  define rsx_backend_pump    rsx_vulkan_backend_pump_messages
+#  define RSX_BACKEND_NAME    "Vulkan"
+#elif defined(_WIN32)
 extern "C" int  rsx_d3d12_backend_init(uint32_t w, uint32_t h, const char* title);
 extern "C" void rsx_d3d12_backend_present(void);
 extern "C" int  rsx_d3d12_backend_pump_messages(void);
@@ -188,9 +200,18 @@ extern "C" unsigned ppu_boot_frames_presented(void)
  * 16.683 ms vblank or to see a frame that came 3 ms late. */
 static unsigned long long mono_us(void)
 {
+#ifdef _WIN32
+    static LARGE_INTEGER f;
+    LARGE_INTEGER c;
+    if (!f.QuadPart) QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&c);
+    return (unsigned long long)(c.QuadPart / f.QuadPart) * 1000000ull +
+           (unsigned long long)(c.QuadPart % f.QuadPart) * 1000000ull / (unsigned long long)f.QuadPart;
+#else
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (unsigned long long)ts.tv_sec * 1000000ull + (unsigned long long)ts.tv_nsec / 1000u;
+#endif
 }
 
 /* RSX_PACE_LOG=<seconds>: frame pacing, which an average frame rate hides. Each line
@@ -247,7 +268,12 @@ static void spike_note(unsigned long long t0, unsigned long long t1)
             const unsigned long long present = s_spk_present + (t1 - t0);
             const unsigned long long busy = s_spk_drain + present + s_spk_pump;
             time_t now = time(nullptr);
-            struct tm tmv; localtime_r(&now, &tmv);
+            struct tm tmv;
+#ifdef _WIN32
+            localtime_s(&tmv, &now);
+#else
+            localtime_r(&now, &tmv);
+#endif
             fprintf(stderr, "[spike] %02d:%02d:%02d frame %.1f ms = drain %.1f (%llu calls, max %.1f) + present %.1f + pump %.1f + waiting for the guest %.1f\n",
                     tmv.tm_hour, tmv.tm_min, tmv.tm_sec, iv / 1000.0, s_spk_drain / 1000.0, s_spk_calls,
                     s_spk_drain_max / 1000.0, present / 1000.0, s_spk_pump / 1000.0,
@@ -299,11 +325,18 @@ static void present_guest_frame(void)
 #include <signal.h>
 #include <unistd.h>
 #include <time.h>
+#else
+#include <process.h>   /* _exit */
+#endif
 extern "C" void cellSysutilQueueEvent(int slot, uint32_t status, uint32_t param);
 extern "C" int  cellSaveData_busy(void);
 static int g_clean_exit = -1;            /* resolved in quit_install() */
+#ifndef _WIN32
 static int g_quit_pipe[2] = { -1, -1 };
 static volatile int g_quit_started = 0;
+#else
+static volatile LONG g_quit_started = 0;
+#endif
 
 static bool clean_exit_on(void)
 {
@@ -316,8 +349,12 @@ static bool clean_exit_on(void)
 
 static void quit_sleep_ms(int ms)
 {
+#ifdef _WIN32
+    Sleep((DWORD)ms);
+#else
     struct timespec ts = { ms / 1000, (long)(ms % 1000) * 1000000L };
     nanosleep(&ts, nullptr);
+#endif
 }
 
 /* Runs once, on the quit thread. Never returns. */
@@ -344,6 +381,7 @@ static void quit_now(const char* why)
     _exit(0);
 }
 
+#ifndef _WIN32
 static void* quit_thread(void*)
 {
     for (;;) {
@@ -401,15 +439,68 @@ static void quit_install(void)
     sigaction(SIGHUP, &sa, nullptr);
 }
 #else
-static bool clean_exit_on(void) { return false; }
-static void quit_request_window_closed(void) {}
-static void quit_install(void) {}
+/* Windows: the window closing (the Vulkan backend's pump reports it) and
+ * Ctrl+C / Ctrl+Break / closing the console end the process the same way, on
+ * a thread of their own so the frame clock is not held while a save finishes.
+ * Before this the window closing only stopped the FIFO drain and the title kept
+ * running, invisible, until it was killed. */
+static DWORD WINAPI quit_thread_win(LPVOID why)
+{
+    quit_now((const char*)why);
+    return 0;
+}
+
+static void quit_request_window_closed(void)
+{
+    if (!clean_exit_on() || InterlockedExchange(&g_quit_started, 1)) return;
+    HANDLE t = CreateThread(NULL, 0, quit_thread_win, (LPVOID)"window closed", 0, NULL);
+    if (t) CloseHandle(t);
+    else quit_now("window closed");
+}
+
+static BOOL WINAPI quit_console(DWORD type)
+{
+    if (InterlockedExchange(&g_quit_started, 1)) return TRUE;
+    quit_now(type == CTRL_C_EVENT ? "Ctrl+C" : type == CTRL_BREAK_EVENT ? "Ctrl+Break"
+                                             : "console closed");
+    return TRUE;
+}
+
+static void quit_install(void)
+{
+    if (!clean_exit_on()) return;
+    SetConsoleCtrlHandler(quit_console, TRUE);
+}
 #endif
 
 /* The frame clock sleeps on this between passes; an SPU storing the RSX `put` rings
  * it (g_gcm_put_doorbell) so the drain runs within microseconds of the move instead
  * of up to a pass later. Everything still runs on this thread. */
 extern "C" void (*g_gcm_put_doorbell)(void);
+#ifdef _WIN32
+static SRWLOCK            s_db_mtx = SRWLOCK_INIT;
+static CONDITION_VARIABLE s_db_cv  = CONDITION_VARIABLE_INIT;
+static int s_db_rung = 0;
+static void put_doorbell(void)
+{
+    AcquireSRWLockExclusive(&s_db_mtx);
+    s_db_rung = 1;
+    WakeConditionVariable(&s_db_cv);
+    ReleaseSRWLockExclusive(&s_db_mtx);
+}
+/* timeBeginPeriod(1) below makes a 1 ms wait about 1 ms; a shorter one waits
+ * that millisecond too, unless the doorbell rings first. */
+static void frame_clock_wait(int us)
+{
+    AcquireSRWLockExclusive(&s_db_mtx);
+    if (!s_db_rung) {
+        const DWORD ms = (DWORD)((us + 999) / 1000);
+        SleepConditionVariableSRW(&s_db_cv, &s_db_mtx, ms ? ms : 1, 0);
+    }
+    s_db_rung = 0;
+    ReleaseSRWLockExclusive(&s_db_mtx);
+}
+#else
 static pthread_mutex_t s_db_mtx = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t  s_db_cv  = PTHREAD_COND_INITIALIZER;
 static int s_db_rung = 0;
@@ -434,6 +525,7 @@ static void frame_clock_wait(int us)
     s_db_rung = 0;
     pthread_mutex_unlock(&s_db_mtx);
 }
+#endif
 
 static DWORD WINAPI frame_clock(LPVOID)
 {
@@ -661,6 +753,11 @@ int main(int argc, char** argv)
     ppu_sysprx_register();   /* boot-critical CRT */
     ppu_fs_register();       /* cellFs over the game directory */
     lv2_init_syscalls();     /* the lv2 syscall table */
+#ifdef _WIN32
+    /* PS3_SAMPLE=<ms>: the toolkit's guest-PC sampler (runtime/ppu/ppu_loader.cpp),
+     * a periodic report of where every guest thread is, for a boot that stalls. */
+    { extern void ps3_sampler_start(void); ps3_sampler_start(); }
+#endif
 
     /* Install the guest-callback hook, then start the frame clock. It no-ops
      * until the title registers its vblank and flip handlers during init. */
@@ -705,6 +802,30 @@ int main(int argc, char** argv)
         while (!__atomic_load_n(&ba.done, __ATOMIC_ACQUIRE))
             CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, false);
         pthread_join(th, nullptr);
+        rc = ba.rc;
+    }
+#elif defined(_WIN32)
+    /* The guest's main thread runs lifted code, which recurses on the host
+     * stack as deep as the guest does: the process's 1 MB main stack is far too
+     * small. Its own thread, with the 256 MB reservation every other guest
+     * thread gets (sys_ppu_thread.c), committed only as it is used. */
+    {
+        struct boot_args { uint32_t entry; uint32_t stack_top; int rc; };
+        static boot_args ba;
+        ba.entry = entry; ba.stack_top = STACK_TOP; ba.rc = 0;
+        auto body = [](LPVOID a) -> DWORD {
+            boot_args* b = (boot_args*)a;
+            b->rc = ppu_run(b->entry, b->stack_top);
+            return 0;
+        };
+        HANDLE th = CreateThread(NULL, 256u * 1024u * 1024u, body, &ba,
+                                 STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
+        if (!th) {
+            fprintf(stderr, "[boot] could not start the guest thread (error %lu)\n", GetLastError());
+            return 1;
+        }
+        WaitForSingleObject(th, INFINITE);
+        CloseHandle(th);
         rc = ba.rc;
     }
 #else

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(PES2013Recomp
     VERSION 0.1.0
     LANGUAGES C CXX
-    DESCRIPTION "Recompiled PES 2013 (PS3 BLUS31029) for macOS/arm64 (ps3recomp)"
+    DESCRIPTION "Recompiled PES 2013 (PS3 BLUS31029) for macOS/arm64 and Windows x64 (ps3recomp)"
 )
 
 # ---------------------------------------------------------------------------
@@ -74,6 +74,11 @@ message(STATUS "Lifted sources:  ${RECOMP_SOURCE_COUNT} file(s)")
 # imported one arrives without SDL2, pthreads, the Metal frameworks or the
 # Winsock/XInput imports -- the link then fails on every platform for a
 # different reason. add_subdirectory hands all of that over with the target.
+# Windows: controllers through SDL2 (DualSense, DualShock 4, Xbox), so the
+# match events in pes_events.cpp reach the DualSense as they do on macOS.
+if(WIN32 AND NOT DEFINED PS3RECOMP_PAD_SDL2)
+    set(PS3RECOMP_PAD_SDL2 ON CACHE BOOL "Windows: read controllers through SDL2 instead of XInput")
+endif()
 add_subdirectory("${PS3RECOMP_DIR}" "${CMAKE_BINARY_DIR}/ps3recomp_sdk"
                  EXCLUDE_FROM_ALL)
 # CMAKE_BUILD_TYPE is empty, so nothing here is optimized unless it says so. The
@@ -259,7 +264,18 @@ endif()
 # ---------------------------------------------------------------------------
 # Compiler-specific flags
 # ---------------------------------------------------------------------------
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+# clang-cl (Windows) is Clang with MSVC's command line, so it is told apart
+# from clang first: -Wall there is /Wall, every warning clang has.
+if(MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        /W3 -Wno-unused-parameter
+        /clang:-fno-strict-aliasing
+        /clang:-fwrapv          # see the clang branch below
+    )
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        _CRT_SECURE_NO_WARNINGS
+    )
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(${PROJECT_NAME} PRIVATE
         -Wall -Wextra -Wno-unused-parameter
         -fno-strict-aliasing
@@ -292,7 +308,12 @@ endif()
 #     default; a PPC fmadd is spelt as one where the lifter means one.
 #   - /bigobj on MSVC. A single lifted file routinely passes the 65,536-section
 #     limit of the default object format.
-if(MSVC)
+if(MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # clang-cl: -O1 as on macOS (a Release /O2 on these TUs costs far more time
+    # and memory for little), no contraction, and /bigobj.
+    set_source_files_properties(${RECOMP_SOURCES} PROPERTIES
+        COMPILE_OPTIONS "/w;/bigobj;/clang:-O1;/clang:-ffp-contract=off")
+elseif(MSVC)
     set_source_files_properties(${RECOMP_SOURCES} PROPERTIES
         COMPILE_OPTIONS "/w;/bigobj")
 else()
