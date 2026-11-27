@@ -19,7 +19,8 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 - **Próximo:** esse pico no início do replay; modos de janela, resolução interna,
   filtros de imagem e pacotes de texturas (sendo trazidos); a primeira abertura
   real pelo launcher; um teste de modo carreira.
-- **Ainda não:** Windows e Linux, online.
+- **Experimental no Windows.** PES 2013 abre o menu principal. [Guia do Windows](docs/WINDOWS.pt-BR.md)
+- **Ainda não:** Linux, online.
 
 ---
 
@@ -182,7 +183,11 @@ lista de trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.m
 
 ### Outras plataformas
 
-- [ ] Windows e Linux.
+- [x] Build Windows x64: clang-cl, backend Vulkan, toolkit sobre o sp00nznet/ps3recomp `e85647a3` com as mudanças deste port (`patches/ps3recomp-e85647a-pes13-windows.patch`), scripts em `tools/windows/`. O título de teste do toolkit roda pelo executável do port (27/11/2026).
+- [x] Windows: iniciar o PES 2013 recompilado até o menu principal (27/11/2026).
+- [ ] Windows: verificar taxa de quadros, áudio e controles numa partida.
+- [ ] Windows: os recursos só do Metal no Vulkan (pacotes de texturas, filtros de imagem, SMAA/FXAA, resolução interna, upscaling) e o launcher.
+- [ ] Linux.
 
 ---
 

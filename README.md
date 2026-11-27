@@ -67,7 +67,8 @@ updated when the project status, supported game version or target platforms chan
 | Closing the window ends the game | ✅ since 2026-11-06 (it used to keep running with no window) |
 | Master League, Become a Legend, saving a career | ❓ not tested |
 | Online, trophies | ❓ offline only, not tested |
-| Linux and Windows | ⏳ not planned yet |
+| Windows x64 (Vulkan) | 🧪 PES 2013 reaches the main menu (2026-11-27). [Windows build and run guide](docs/WINDOWS.md) |
+| Linux | ⏳ not planned yet |
 
 Details and next steps in [ROADMAP.md](ROADMAP.md).
 

@@ -19,7 +19,8 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 - **Next:** that replay-start spike; window modes, internal resolution, image
   filters and texture packs (being ported); the launcher's first real launch;
   a career mode test.
-- **Not yet:** Windows and Linux, online.
+- **Experimental on Windows.** PES 2013 reaches the main menu. [Windows guide](docs/WINDOWS.md)
+- **Not yet:** Linux, online.
 
 ---
 
@@ -182,7 +183,11 @@ work list, in Portuguese, is [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
 
 ### Other platforms
 
-- [ ] Windows and Linux.
+- [x] Windows x64 build: clang-cl, Vulkan backend, toolkit on sp00nznet/ps3recomp `e85647a3` with this port's changes (`patches/ps3recomp-e85647a-pes13-windows.patch`), scripts in `tools/windows/`. The toolkit's test title boots through the port's runner (2026-11-27).
+- [x] Windows: boot the recompiled PES 2013 to the main menu (2026-11-27).
+- [ ] Windows: verify frame rate, audio and controllers in a match.
+- [ ] Windows: the Metal-only features on Vulkan (texture packs, picture filters, SMAA/FXAA, internal resolution, upscaling), and the launcher.
+- [ ] Linux.
 
 ---
 

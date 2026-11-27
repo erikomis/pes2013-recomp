@@ -67,7 +67,8 @@ atualizado quando mudar o estado do projeto, a versão do jogo suportada ou as p
 | Fechar a janela encerra o jogo | ✅ desde 2026-11-06 (antes continuava rodando sem janela) |
 | Master League, Rumo ao Estrelato, salvar uma carreira | ❓ não testado |
 | Online, troféus | ❓ só offline, não testado |
-| Linux e Windows | ⏳ ainda sem plano |
+| Windows x64 (Vulkan) | 🧪 PES 2013 abre o menu principal (27/11/2026). [Guia para compilar e rodar no Windows](docs/WINDOWS.pt-BR.md) |
+| Linux | ⏳ ainda sem plano |
 
 Detalhes e próximos passos em [ROADMAP.pt-BR.md](ROADMAP.pt-BR.md). A lista de
 trabalho do dia a dia está em [docs/O_QUE_FALTA.md](docs/O_QUE_FALTA.md).
